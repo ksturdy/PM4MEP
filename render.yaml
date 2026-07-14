@@ -69,6 +69,12 @@ services:
     rootDir: apps/web
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm turbo run build --filter=@pm4mep/web...
     startCommand: pnpm --filter @pm4mep/web start
+    # www is primary; apex pm4mep.com is listed so Render issues a cert for
+    # it too and can redirect it to www (configured in the Render dashboard
+    # after DNS is verified, since Blueprint sync doesn't set redirect targets).
+    domains:
+      - www.pm4mep.com
+      - pm4mep.com
     envVars:
       - key: API_BASE_URL
         fromService:
