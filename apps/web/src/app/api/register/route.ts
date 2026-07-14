@@ -1,8 +1,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { API_BASE_URL } from "@/lib/api";
 import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
-
-const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:4000";
 
 // Same pattern as api/login/route.ts — proxies to the API and, on success,
 // sets the returned JWT as a first-party cookie so registration also logs

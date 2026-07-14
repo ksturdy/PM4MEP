@@ -1,8 +1,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { API_BASE_URL } from "@/lib/api";
 import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
-
-const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:4000";
 
 // Proxies to apps/api's /auth/login and, on success, sets the JWT as a
 // first-party httpOnly cookie on *this* origin. The API and web app run on
