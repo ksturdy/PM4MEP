@@ -21,7 +21,11 @@ services:
     runtime: node
     plan: starter
     rootDir: apps/api
-    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @pm4mep/db prisma:generate && pnpm --filter @pm4mep/api build
+    # turbo (not a bare `pnpm --filter build`) so the @pm4mep/db,
+    # @pm4mep/shared-schema, and @pm4mep/domain workspace packages this
+    # service imports get built first, in dependency order — same as local
+    # dev, where `pnpm turbo run build` always builds them before apps/api.
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm turbo run build --filter=@pm4mep/api...
     # Runs once per deploy, after build, before traffic shifts to the new
     # instance. `prisma db execute` (not raw psql) since Render's Node build
     # image isn't guaranteed to have postgresql-client installed. New RLS
@@ -49,7 +53,7 @@ services:
     runtime: node
     plan: starter
     rootDir: apps/web
-    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @pm4mep/web build
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm turbo run build --filter=@pm4mep/web...
     startCommand: pnpm --filter @pm4mep/web start
     envVars:
       - key: API_BASE_URL
