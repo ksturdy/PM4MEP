@@ -20,8 +20,10 @@
     "@pm4mep/db": "workspace:*",
     "@pm4mep/domain": "workspace:*",
     "@pm4mep/shared-schema": "workspace:*",
+    "@react-pdf/renderer": "^4.1.6",
     "bcryptjs": "^2.4.3",
     "fastify": "^5.2.0",
+    "react": "^19.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^3.24.1"
@@ -33,6 +35,7 @@
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
     "jest": "^29.7.0",
     "jsonwebtoken": "9.0.3",
     "source-map-support": "^0.5.21",

@@ -17,7 +17,10 @@
     // a model has a Decimal column (PriceListItem/LaborRate did, CostCode
     // didn't, which is why this surfaced now and not in Phase 0).
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    // Needed for the proposal PDF templates (apps/api/src/proposals/templates/*.tsx),
+    // which render via @react-pdf/renderer's React-component model.
+    "jsx": "react-jsx"
   },
   "include": ["src"]
 }

@@ -626,6 +626,33 @@ function SummaryCard({ estimate }: { estimate: EstimateWithDetails }) {
   );
 }
 
+function ProposalLinks({ estimateId }: { estimateId: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        nativeButton={false}
+        render={
+          <a href={`/estimating/estimates/${estimateId}/proposal?internal=false`} target="_blank" rel="noreferrer">
+            Customer PDF
+          </a>
+        }
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        nativeButton={false}
+        render={
+          <a href={`/estimating/estimates/${estimateId}/proposal?internal=true`} target="_blank" rel="noreferrer">
+            Internal PDF
+          </a>
+        }
+      />
+    </div>
+  );
+}
+
 export function EstimateBuilderClient({
   estimate,
   assemblies,
@@ -644,7 +671,10 @@ export function EstimateBuilderClient({
           </h1>
           <p className="text-muted-foreground">{estimate.customerName}</p>
         </div>
-        <StatusControls estimateId={estimate.id} status={estimate.status} />
+        <div className="flex items-center gap-4">
+          <ProposalLinks estimateId={estimate.id} />
+          <StatusControls estimateId={estimate.id} status={estimate.status} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
