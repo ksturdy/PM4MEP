@@ -7,3 +7,4 @@ export * from "./auth.js";
 export * from "./price-list-item.js";
 export * from "./labor-rate.js";
 export * from "./customer.js";
+export * from "./assembly.js";

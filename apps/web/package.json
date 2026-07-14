@@ -13,6 +13,7 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@hookform/resolvers": "^5.4.0",
+    "@pm4mep/domain": "workspace:*",
     "@pm4mep/shared-schema": "workspace:*",
     "@tailwindcss/postcss": "^4.3.2",
     "class-variance-authority": "^0.7.1",

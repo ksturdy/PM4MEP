@@ -1,13 +1,21 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiFetch } from "@/lib/api";
+import { AssembliesClient, type AssemblyListRow } from "./assemblies-client";
 
-export default function AssembliesPage() {
+export const dynamic = "force-dynamic";
+
+export default async function AssembliesPage() {
+  const res = await apiFetch("/assemblies");
+  const assemblies = (await res.json()) as AssemblyListRow[];
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Assemblies</CardTitle>
-        <CardDescription>Reusable pricing recipes built from price list and labor rate components.</CardDescription>
-      </CardHeader>
-      <CardContent className="text-sm text-muted-foreground">Coming shortly — built next in this phase.</CardContent>
-    </Card>
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Assemblies</h1>
+        <p className="text-muted-foreground">
+          Reusable pricing recipes built from price list and labor rate components.
+        </p>
+      </div>
+      <AssembliesClient assemblies={assemblies} />
+    </div>
   );
 }
