@@ -21,10 +21,28 @@ export class EmailService {
   // supports). Falls back to logging the accept link so local dev and any
   // environment without RESEND_API_KEY configured still works end to end.
   async sendInviteEmail(input: { to: string; orgName: string; inviterName: string; acceptUrl: string }): Promise<void> {
+    await this.send({
+      to: input.to,
+      subject: `${input.inviterName} invited you to join ${input.orgName} on PM4MEP`,
+      text: `${input.inviterName} invited you to join ${input.orgName} on PM4MEP.\n\nAccept your invite: ${input.acceptUrl}`,
+      html: `<p>${input.inviterName} invited you to join <strong>${input.orgName}</strong> on PM4MEP.</p><p><a href="${input.acceptUrl}">Accept your invite</a></p>`,
+      fallbackLog: `Invite link for ${input.to}: ${input.acceptUrl}`,
+    });
+  }
+
+  async sendPasswordResetEmail(input: { to: string; resetUrl: string }): Promise<void> {
+    await this.send({
+      to: input.to,
+      subject: "Reset your PM4MEP password",
+      text: `A password reset was requested for your PM4MEP account.\n\nReset your password: ${input.resetUrl}\n\nIf you didn't request this, you can ignore this email.`,
+      html: `<p>A password reset was requested for your PM4MEP account.</p><p><a href="${input.resetUrl}">Reset your password</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+      fallbackLog: `Password reset link for ${input.to}: ${input.resetUrl}`,
+    });
+  }
+
+  private async send(input: { to: string; subject: string; text: string; html: string; fallbackLog: string }): Promise<void> {
     if (!this.client) {
-      this.logger.warn(
-        `RESEND_API_KEY not configured — skipping email. Invite link for ${input.to}: ${input.acceptUrl}`,
-      );
+      this.logger.warn(`RESEND_API_KEY not configured — skipping email. ${input.fallbackLog}`);
       return;
     }
 
@@ -35,15 +53,15 @@ export class EmailService {
     const { data, error } = await this.client.emails.send({
       to: input.to,
       from: this.config.getOrThrow<string>("EMAIL_FROM"),
-      subject: `${input.inviterName} invited you to join ${input.orgName} on PM4MEP`,
-      text: `${input.inviterName} invited you to join ${input.orgName} on PM4MEP.\n\nAccept your invite: ${input.acceptUrl}`,
-      html: `<p>${input.inviterName} invited you to join <strong>${input.orgName}</strong> on PM4MEP.</p><p><a href="${input.acceptUrl}">Accept your invite</a></p>`,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
     });
 
     if (error) {
-      this.logger.error(`Resend rejected invite email to ${input.to}: ${error.name} — ${error.message}`);
-      throw new Error(`Failed to send invite email: ${error.message}`);
+      this.logger.error(`Resend rejected email to ${input.to}: ${error.name} — ${error.message}`);
+      throw new Error(`Failed to send email: ${error.message}`);
     }
-    this.logger.log(`Invite email sent to ${input.to} (Resend id: ${data?.id})`);
+    this.logger.log(`Email sent to ${input.to} (Resend id: ${data?.id})`);
   }
 }

@@ -65,4 +65,11 @@ export class TeamController {
   removeMember(@CurrentAuth() auth: AuthContext, @Param("id") id: string) {
     return this.team.removeMember(auth.orgId, id);
   }
+
+  @Post("members/:id/reset-password")
+  @UseGuards(RolesGuard)
+  @Roles("Owner", "Admin")
+  resetMemberPassword(@CurrentAuth() auth: AuthContext, @Param("id") id: string) {
+    return this.team.resetMemberPassword(auth.orgId, id);
+  }
 }

@@ -131,17 +131,39 @@ model StripeEvent {
 // Credentials + identity. passwordHash is bcrypt (see apps/api/src/auth/auth.service.ts);
 // plaintext passwords are never stored or logged.
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
   name         String
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   memberships      Membership[]
   createdEstimates Estimate[]
+  passwordResets   PasswordReset[]
 
   @@map("users")
+}
+
+// Password reset tokens, both admin-triggered (Owner/Admin resets a
+// teammate's password from Settings > Team) and self-service (the
+// "Forgot password?" link on /login). Not RLS-scoped — same reasoning as
+// Invitation: looked up by a unique random token the requester already
+// possesses (from the emailed link), and users itself isn't org-scoped.
+// tokenHash, not the raw token, is stored, same as Invitation.
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_resets")
 }
 
 // Join table between User and Organization. Modeled explicitly (rather than

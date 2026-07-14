@@ -15,3 +15,15 @@ export const LoginInputSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof LoginInputSchema>;
+
+export const ForgotPasswordInputSchema = z.object({
+  email: z.string().email(),
+});
+
+export type ForgotPasswordInput = z.infer<typeof ForgotPasswordInputSchema>;
+
+export const ResetPasswordInputSchema = z.object({
+  password: z.string().min(8).max(200),
+});
+
+export type ResetPasswordInput = z.infer<typeof ResetPasswordInputSchema>;

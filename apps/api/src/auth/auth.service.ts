@@ -1,22 +1,28 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { STANDARD_COST_CODES } from "@pm4mep/db";
 import type { LoginInput, RegisterInput } from "@pm4mep/shared-schema";
 import { PrismaService } from "../prisma/prisma.service";
+import { EmailService } from "../email/email.service";
 import type { AuthContext } from "./auth-context";
 import type { JwtPayload } from "./jwt-payload";
 import { slugify } from "./slugify";
+import { generateToken, hashToken } from "./token.util";
 
 const BCRYPT_ROUNDS = 10;
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly email: EmailService,
   ) {}
 
   async register(input: RegisterInput) {
@@ -70,6 +76,12 @@ export class AuthService {
       throw new UnauthorizedException("This account has no organization");
     }
 
+    // Best-effort, not awaited into the response — a failed timestamp write
+    // shouldn't block login. Fire-and-forget with its own error log instead.
+    this.prisma.user
+      .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      .catch((err: unknown) => this.logger.error("Failed to update lastLoginAt", err));
+
     return this.issueSession({
       userId: user.id,
       email: user.email,
@@ -102,6 +114,64 @@ export class AuthService {
         subscriptionStatus: org.subscriptionStatus,
       },
     };
+  }
+
+  // Self-service "Forgot password?" entry point. Always resolves the same
+  // way regardless of whether the email matched a user — distinguishing
+  // the two would let an attacker enumerate accounts (same reasoning as
+  // login()'s generic "Invalid email or password").
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return;
+    await this.sendPasswordReset(user);
+  }
+
+  // Admin-triggered entry point (TeamService, Owner/Admin resetting a
+  // teammate's password) — the caller already resolved and authorized the
+  // userId, so no enumeration concern here.
+  async triggerPasswordReset(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    await this.sendPasswordReset(user);
+  }
+
+  async getPasswordResetEmail(rawToken: string): Promise<string> {
+    const reset = await this.findValidPasswordReset(rawToken);
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: reset.userId } });
+    return user.email;
+  }
+
+  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
+    const reset = await this.findValidPasswordReset(rawToken);
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: reset.userId }, data: { passwordHash } }),
+      this.prisma.passwordReset.update({ where: { id: reset.id }, data: { usedAt: new Date() } }),
+    ]);
+  }
+
+  private async sendPasswordReset(user: { id: string; email: string }): Promise<void> {
+    const { raw, hash } = generateToken();
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+
+    await this.prisma.passwordReset.create({ data: { userId: user.id, tokenHash: hash, expiresAt } });
+
+    const resetUrl = `${this.webAppOrigin}/reset-password?token=${raw}`;
+    await this.email.sendPasswordResetEmail({ to: user.email, resetUrl });
+  }
+
+  private async findValidPasswordReset(rawToken: string) {
+    const reset = await this.prisma.passwordReset.findUnique({ where: { tokenHash: hashToken(rawToken) } });
+    if (!reset || reset.usedAt || reset.expiresAt < new Date()) {
+      throw new NotFoundException("This password reset link is invalid or has expired");
+    }
+    return reset;
+  }
+
+  private get webAppOrigin(): string {
+    // Same env var main.ts/billing.service.ts/team.service.ts already
+    // read — one fewer var to keep in sync between call sites.
+    return (this.config.get<string>("WEB_APP_ORIGIN") ?? "http://localhost:3000").split(",")[0] ?? "http://localhost:3000";
   }
 
   // Public: also called by TeamService when an invite is accepted, so

@@ -26,6 +26,7 @@ export const TeamMemberSchema = MembershipSchema.extend({
     id: z.string().uuid(),
     name: z.string(),
     email: z.string().email(),
+    lastLoginAt: z.coerce.date().nullable(),
   }),
 });
 

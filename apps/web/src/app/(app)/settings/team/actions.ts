@@ -52,3 +52,12 @@ export async function removeMember(membershipId: string): Promise<ActionResult> 
   revalidatePath("/settings/team");
   return { ok: true, data: undefined };
 }
+
+export async function resetMemberPassword(membershipId: string): Promise<ActionResult> {
+  const res = await apiFetch(`/team/members/${membershipId}/reset-password`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    return { ok: false, error: body?.message ?? "Failed to send password reset" };
+  }
+  return { ok: true, data: undefined };
+}

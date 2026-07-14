@@ -7,7 +7,7 @@ import { AuthService } from "../auth/auth.service";
 import type { AuthContext } from "../auth/auth-context";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailService } from "../email/email.service";
-import { generateInviteToken, hashInviteToken } from "./token.util";
+import { generateToken, hashToken } from "../auth/token.util";
 
 const BCRYPT_ROUNDS = 10;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -25,10 +25,18 @@ export class TeamService {
     return this.prisma.withTenant(orgId, (tx) =>
       tx.membership.findMany({
         where: { orgId },
-        include: { user: { select: { id: true, name: true, email: true } } },
+        include: { user: { select: { id: true, name: true, email: true, lastLoginAt: true } } },
         orderBy: { createdAt: "asc" },
       }),
     );
+  }
+
+  async resetMemberPassword(orgId: string, membershipId: string) {
+    const membership = await this.prisma.withTenant(orgId, (tx) => tx.membership.findUnique({ where: { id: membershipId } }));
+    if (!membership || membership.orgId !== orgId) {
+      throw new NotFoundException("Member not found");
+    }
+    await this.auth.triggerPasswordReset(membership.userId);
   }
 
   // Not withTenant — invitations aren't RLS-scoped (see schema.prisma), so
@@ -59,7 +67,7 @@ export class TeamService {
       }
     }
 
-    const { raw, hash } = generateInviteToken();
+    const { raw, hash } = generateToken();
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
 
     const invitation = await this.prisma.invitation.upsert({
@@ -163,7 +171,7 @@ export class TeamService {
   }
 
   private async findValidInvitation(rawToken: string) {
-    const invitation = await this.prisma.invitation.findUnique({ where: { tokenHash: hashInviteToken(rawToken) } });
+    const invitation = await this.prisma.invitation.findUnique({ where: { tokenHash: hashToken(rawToken) } });
     if (!invitation || invitation.acceptedAt || invitation.expiresAt < new Date()) {
       throw new NotFoundException("This invite link is invalid or has expired");
     }
