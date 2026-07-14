@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/session";
 
-const PUBLIC_PATHS = ["/", "/login", "/register"];
+const PUBLIC_PATHS = ["/", "/login", "/register", "/accept-invite", "/pricing"];
 
 // Presence-only check — this does not verify the JWT (middleware runs on
 // the Edge runtime and doesn't need the signing secret to do its job).
