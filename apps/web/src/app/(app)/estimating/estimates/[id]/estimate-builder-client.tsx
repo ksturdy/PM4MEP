@@ -9,11 +9,14 @@ import {
   CostTypeSchema,
   EstimateLineItemFromAssemblyCreateSchema,
   EstimateLineItemManualCreateSchema,
+  EstimateLineItemUpdateSchema,
   EstimateSectionCreateSchema,
   type Assembly,
   type CostCode,
+  type EstimateLineItem,
   type EstimateLineItemFromAssemblyCreate,
   type EstimateLineItemManualCreate,
+  type EstimateLineItemUpdate,
   type EstimateSectionCreate,
   type EstimateStatus,
   type EstimateWithDetails,
@@ -42,6 +45,7 @@ import {
   removeSection,
   transitionEstimateStatus,
   updateEstimate,
+  updateLineItem,
 } from "../actions";
 
 const STATUS_VARIANT: Record<string, "secondary" | "default" | "destructive"> = {
@@ -469,6 +473,114 @@ function RemoveButton({ onRemove }: { onRemove: () => Promise<void> }) {
   );
 }
 
+function EditLineItemDialog({ estimateId, lineItem }: { estimateId: string; lineItem: EstimateLineItem }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<EstimateLineItemUpdate>({
+    resolver: zodResolver(EstimateLineItemUpdateSchema),
+    defaultValues: {
+      description: lineItem.description,
+      unit: lineItem.unit,
+      unitCost: lineItem.unitCost,
+      quantity: lineItem.quantity,
+      markupOverridePct: lineItem.markupOverridePct ?? undefined,
+    },
+  });
+
+  async function submit(values: EstimateLineItemUpdate) {
+    setServerError(null);
+    const result = await updateLineItem(estimateId, lineItem.id, {
+      ...values,
+      markupOverridePct:
+        values.markupOverridePct === undefined || Number.isNaN(values.markupOverridePct)
+          ? null
+          : values.markupOverridePct,
+    });
+    if (!result.ok) {
+      setServerError(result.error ?? "Something went wrong");
+      return;
+    }
+    setOpen(false);
+    router.refresh();
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          reset({
+            description: lineItem.description,
+            unit: lineItem.unit,
+            unitCost: lineItem.unitCost,
+            quantity: lineItem.quantity,
+            markupOverridePct: lineItem.markupOverridePct ?? undefined,
+          });
+        }
+      }}
+    >
+      <DialogTrigger render={<Button variant="ghost" size="sm">Edit</Button>} />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit line item</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="edit-description">Description</Label>
+            <Input id="edit-description" {...register("description")} />
+            {errors.description && <p className="text-sm text-destructive">{errors.description.message}</p>}
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-unit">Unit</Label>
+              <Input id="edit-unit" {...register("unit")} />
+              {errors.unit && <p className="text-sm text-destructive">{errors.unit.message}</p>}
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-quantity">Quantity</Label>
+              <Input id="edit-quantity" type="number" step="0.0001" {...register("quantity", { valueAsNumber: true })} />
+              {errors.quantity && <p className="text-sm text-destructive">{errors.quantity.message}</p>}
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-unitCost">Unit cost ($)</Label>
+              <Input id="edit-unitCost" type="number" step="0.0001" {...register("unitCost", { valueAsNumber: true })} />
+              {errors.unitCost && <p className="text-sm text-destructive">{errors.unitCost.message}</p>}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="edit-markupOverridePct">Markup override % (optional)</Label>
+            <Input
+              id="edit-markupOverridePct"
+              type="number"
+              step="0.01"
+              placeholder="Use estimate default"
+              {...register("markupOverridePct", {
+                setValueAs: (value) => (value === "" ? undefined : Number(value)),
+              })}
+            />
+            {errors.markupOverridePct && (
+              <p className="text-sm text-destructive">{errors.markupOverridePct.message}</p>
+            )}
+          </div>
+          {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+          <DialogFooter>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Saving…" : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SectionCard({
   estimate,
   section,
@@ -529,7 +641,10 @@ function SectionCard({
                   <TableCell>${lineItem.unitCost.toFixed(2)}</TableCell>
                   <TableCell>${lineItem.extendedCost.toFixed(2)}</TableCell>
                   <TableCell>
-                    <RemoveButton onRemove={() => removeLineItem(estimate.id, lineItem.id).then(() => undefined)} />
+                    <div className="flex items-center justify-end gap-1">
+                      <EditLineItemDialog estimateId={estimate.id} lineItem={lineItem} />
+                      <RemoveButton onRemove={() => removeLineItem(estimate.id, lineItem.id).then(() => undefined)} />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
