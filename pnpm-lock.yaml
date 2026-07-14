@@ -47,6 +47,9 @@ importers:
       '@pm4mep/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@pm4mep/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@pm4mep/shared-schema':
         specifier: workspace:*
         version: link:../../packages/shared-schema

@@ -10,7 +10,15 @@ export const CustomerSchema = z.object({
   state: z.string().min(1).max(100),
   postalCode: z.string().min(1).max(20),
   primaryContactName: z.string().max(200).nullable(),
-  primaryContactEmail: z.string().email().nullable(),
+  // Not .email() here: this is the read path, and re-validating a stricter
+  // format than what's actually in the database risks exactly the crash
+  // this comment replaced — a stored value that doesn't match a tightened
+  // rule throws on every read. Email format is enforced once, at write
+  // time (CustomerCreateSchema below); "" is treated as no value.
+  primaryContactEmail: z
+    .string()
+    .nullable()
+    .transform((v) => v || null),
   primaryContactPhone: z.string().max(50).nullable(),
   active: z.boolean(),
   createdAt: z.coerce.date(),
@@ -26,7 +34,17 @@ export const CustomerCreateSchema = z.object({
   state: z.string().min(1).max(100),
   postalCode: z.string().min(1).max(20),
   primaryContactName: z.string().max(200).optional(),
-  primaryContactEmail: z.string().email().optional().or(z.literal("")),
+  // A blank form field submits "" (not absence) — accept it, but
+  // transform to undefined so it's never persisted as an empty string
+  // (Prisma treats undefined as "don't set", leaving the column NULL).
+  // Storing "" instead of NULL is exactly what caused a real crash: the
+  // read schema above couldn't parse "" as a valid/nullable email.
+  primaryContactEmail: z
+    .string()
+    .email()
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => (v ? v : undefined)),
   primaryContactPhone: z.string().max(50).optional(),
 });
 

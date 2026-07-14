@@ -18,6 +18,7 @@
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/platform-fastify": "^11.1.28",
     "@pm4mep/db": "workspace:*",
+    "@pm4mep/domain": "workspace:*",
     "@pm4mep/shared-schema": "workspace:*",
     "bcryptjs": "^2.4.3",
     "fastify": "^5.2.0",
