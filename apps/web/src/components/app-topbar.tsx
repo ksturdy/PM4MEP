@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -71,7 +72,9 @@ export function AppTopbar({
             }
           />
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="truncate">{userName}</DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="truncate">{userName}</DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => signOut(router)}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
