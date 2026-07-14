@@ -24,11 +24,11 @@
     "@pm4mep/domain": "workspace:*",
     "@pm4mep/shared-schema": "workspace:*",
     "@react-pdf/renderer": "^4.1.6",
-    "@sendgrid/mail": "^8.1.6",
     "bcryptjs": "^2.4.3",
     "fastify": "^5.2.0",
     "react": "^19.0.0",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.17.2",
     "rxjs": "^7.8.1",
     "stripe": "^22.3.1",
     "zod": "^3.24.1"
