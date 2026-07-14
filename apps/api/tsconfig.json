@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "outDir": "dist",
+    "rootDir": "src",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+    "isolatedModules": false,
+    // apps/api is a deployed service, not a library other packages import
+    // from — it never needs to emit .d.ts files. Without this, TS demands
+    // portable type annotations on every exported method whose inferred
+    // return type touches Prisma's Decimal (TS2742), which only bites once
+    // a model has a Decimal column (PriceListItem/LaborRate did, CostCode
+    // didn't, which is why this surfaced now and not in Phase 0).
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src"]
+}

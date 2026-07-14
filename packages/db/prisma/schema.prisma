@@ -1,0 +1,397 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  Owner
+  Admin
+  Estimator
+  ProjectManager
+  Field
+  Accounting
+}
+
+enum CostType {
+  labor
+  material
+  equipment
+  subcontract
+  other
+}
+
+enum EstimateStatus {
+  Draft
+  Submitted
+  Won
+  Lost
+}
+
+enum EstimateLineItemSourceType {
+  Assembly
+  Manual
+}
+
+enum AssemblyComponentType {
+  PriceListItem
+  LaborRate
+}
+
+// Tenant root. Every tenant-scoped table below carries org_id and is
+// protected by a Postgres RLS policy (see prisma/rls/001_enable_rls.sql,
+// 002_estimating_rls.sql) in addition to being filtered by org_id in
+// application code — see apps/api/src/auth/jwt-auth.guard.ts.
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Proposal letterhead. No logo yet — that needs file storage (R2), not
+  // wired up until a later phase.
+  addressLine1  String? @map("address_line1")
+  addressLine2  String? @map("address_line2")
+  city          String?
+  state         String?
+  postalCode    String? @map("postal_code")
+  phone         String?
+  email         String?
+  licenseNumber String? @map("license_number")
+
+  memberships    Membership[]
+  costCodes      CostCode[]
+  customers      Customer[]
+  priceListItems PriceListItem[]
+  laborRates     LaborRate[]
+  assemblies     Assembly[]
+  estimates      Estimate[]
+  orgSequences   OrgSequence[]
+
+  @@map("organizations")
+}
+
+// Credentials + identity. passwordHash is bcrypt (see apps/api/src/auth/auth.service.ts);
+// plaintext passwords are never stored or logged.
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  memberships      Membership[]
+  createdEstimates Estimate[]
+
+  @@map("users")
+}
+
+// Join table between User and Organization. Modeled explicitly (rather than
+// a role column on User) so a user can belong to more than one org later
+// without a schema migration.
+model Membership {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  orgId     String   @map("org_id")
+  role      Role
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+  @@map("memberships")
+}
+
+// Seeded with standard MCAA/NECA-style codes per org on creation; editable
+// per org thereafter. Referenced by price list items, labor rates, and
+// estimate line items — the spine that ties estimating and (later) project
+// management together. Retire a code by setting active: false rather than
+// deleting it (referencing rows use onDelete: Restrict).
+model CostCode {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  code        String
+  description String
+  costType    CostType @map("cost_type")
+  defaultUnit String   @map("default_unit")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org               Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  priceListItems    PriceListItem[]
+  laborRates        LaborRate[]
+  estimateLineItems EstimateLineItem[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("cost_codes")
+}
+
+// No separate Contact model in Phase 1 — a per-estimate "bid to" override
+// (see Estimate.bidToContactName/Email/Phone) covers proposals addressed to
+// someone other than the customer's general contact, more cheaply than a
+// full CRM contact table this phase doesn't need yet.
+model Customer {
+  id                  String   @id @default(uuid())
+  orgId               String   @map("org_id")
+  name                String
+  addressLine1        String   @map("address_line1")
+  addressLine2        String?  @map("address_line2")
+  city                String
+  state               String
+  postalCode          String   @map("postal_code")
+  primaryContactName  String?  @map("primary_contact_name")
+  primaryContactEmail String?  @map("primary_contact_email")
+  primaryContactPhone String?  @map("primary_contact_phone")
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  estimates Estimate[]
+
+  @@index([orgId])
+  @@index([orgId, name])
+  @@map("customers")
+}
+
+// Material/equipment catalog. No own costType — always inherits live from
+// costCodeId (no snapshot need until something enters an estimate; see
+// EstimateLineItem for where snapshotting actually matters).
+model PriceListItem {
+  id           String   @id @default(uuid())
+  orgId        String   @map("org_id")
+  costCodeId   String   @map("cost_code_id")
+  description  String
+  manufacturer String?
+  modelNumber  String?  @map("model_number")
+  sku          String?
+  unit         String
+  unitCost     Decimal  @map("unit_cost") @db.Decimal(12, 4)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  costCode CostCode     @relation(fields: [costCodeId], references: [id], onDelete: Restrict)
+
+  assemblyComponents AssemblyComponent[]
+  estimateLineItems  EstimateLineItem[]
+
+  @@index([orgId])
+  @@index([orgId, costCodeId])
+  @@map("price_list_items")
+}
+
+// Crew classification + fully-burdened hourly rate (burden already folded
+// in — matches how contractors actually think about labor cost). Same
+// non-redundant costType rule as PriceListItem.
+model LaborRate {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  costCodeId         String   @map("cost_code_id")
+  classification     String
+  burdenedHourlyRate Decimal  @map("burdened_hourly_rate") @db.Decimal(12, 4)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  costCode CostCode     @relation(fields: [costCodeId], references: [id], onDelete: Restrict)
+
+  assemblyComponents AssemblyComponent[]
+  estimateLineItems  EstimateLineItem[]
+
+  @@unique([orgId, classification])
+  @@index([orgId])
+  @@map("labor_rates")
+}
+
+// A reusable "recipe" (e.g. "3-Ton RTU Install") — unit is what the recipe
+// scales against when exploded into an estimate at a given quantity.
+model Assembly {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  name        String
+  description String?
+  unit        String
+  category    String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org        Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  components AssemblyComponent[]
+
+  estimateLineItems EstimateLineItem[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("assemblies")
+}
+
+// A labor or material line inside an Assembly recipe. Exactly one of
+// priceListItemId/laborRateId is populated — enforced in Zod at the API
+// boundary, plus a hand-written Postgres CHECK constraint (see
+// prisma/rls/002_estimating_rls.sql) since Prisma can't express that
+// invariant declaratively. No separate "hours" field: when componentType is
+// LaborRate, quantityPerUnit *is* hours-per-assembly-unit.
+model AssemblyComponent {
+  id              String                @id @default(uuid())
+  orgId           String                @map("org_id")
+  assemblyId      String                @map("assembly_id")
+  componentType   AssemblyComponentType @map("component_type")
+  priceListItemId String?               @map("price_list_item_id")
+  laborRateId     String?               @map("labor_rate_id")
+  quantityPerUnit Decimal               @map("quantity_per_unit") @db.Decimal(12, 4)
+  sortOrder       Int                   @map("sort_order")
+
+  assembly      Assembly       @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
+  priceListItem PriceListItem? @relation(fields: [priceListItemId], references: [id], onDelete: Restrict)
+  laborRate     LaborRate?     @relation(fields: [laborRateId], references: [id], onDelete: Restrict)
+
+  @@index([orgId])
+  @@index([assemblyId])
+  @@map("assembly_components")
+}
+
+// Generic per-org counter, reused for estimate numbers now and invoice
+// numbers etc. in a later phase without a new table. Incremented via
+// `UPDATE ... SET current_value = current_value + 1 RETURNING current_value`
+// inside the same transaction that creates the numbered row, so the row
+// lock serializes concurrent numbering within an org.
+model OrgSequence {
+  orgId        String @map("org_id")
+  key          String
+  currentValue Int    @default(0) @map("current_value")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, key])
+  @@map("org_sequences")
+}
+
+// Markup config is typed columns directly on Estimate, not JSON and not a
+// separate 1:1 table — the cost-type set is fixed (5 values matching
+// CostType), and JSON would lose Decimal precision for no flexibility
+// payoff at this stage. calculatedSellPrice is always server-computed and
+// overwritten on save, never client-trusted; finalSellPriceOverride is
+// nullable ("use calculated" when null) so the two stay distinguishable for
+// later estimate-accuracy reporting. taxPct is applied on top of the
+// resolved (post-override) price for display/PDF purposes — see
+// packages/domain's resolveSellPriceWithTax — so the override always
+// represents the negotiated pre-tax price.
+model Estimate {
+  id         String         @id @default(uuid())
+  orgId      String         @map("org_id")
+  customerId String         @map("customer_id")
+  number     String
+  name       String
+  status     EstimateStatus @default(Draft)
+
+  bidDueDate        DateTime? @map("bid_due_date")
+  bidToContactName  String?   @map("bid_to_contact_name")
+  bidToContactEmail String?   @map("bid_to_contact_email")
+  bidToContactPhone String?   @map("bid_to_contact_phone")
+
+  createdById String @map("created_by_id")
+
+  laborMarkupPct       Decimal @map("labor_markup_pct") @db.Decimal(5, 2)
+  materialMarkupPct    Decimal @map("material_markup_pct") @db.Decimal(5, 2)
+  equipmentMarkupPct   Decimal @map("equipment_markup_pct") @db.Decimal(5, 2)
+  subcontractMarkupPct Decimal @map("subcontract_markup_pct") @db.Decimal(5, 2)
+  otherMarkupPct       Decimal @map("other_markup_pct") @db.Decimal(5, 2)
+  overheadPct          Decimal @map("overhead_pct") @db.Decimal(5, 2)
+  profitPct            Decimal @map("profit_pct") @db.Decimal(5, 2)
+  contingencyPct       Decimal @map("contingency_pct") @db.Decimal(5, 2)
+  taxPct               Decimal @map("tax_pct") @db.Decimal(5, 2)
+
+  calculatedSellPrice    Decimal  @map("calculated_sell_price") @db.Decimal(12, 2)
+  finalSellPriceOverride Decimal? @map("final_sell_price_override") @db.Decimal(12, 2)
+
+  scopeDescription   String? @map("scope_description")
+  inclusions         String?
+  exclusions         String?
+  termsAndConditions String? @map("terms_and_conditions")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer  Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  sections EstimateSection[]
+
+  @@unique([orgId, number])
+  @@index([orgId])
+  @@index([orgId, customerId])
+  @@index([orgId, status])
+  @@map("estimates")
+}
+
+model EstimateSection {
+  id         String @id @default(uuid())
+  orgId      String @map("org_id")
+  estimateId String @map("estimate_id")
+  name       String
+  sortOrder  Int    @map("sort_order")
+
+  estimate  Estimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  lineItems EstimateLineItem[]
+
+  @@index([orgId])
+  @@index([estimateId])
+  @@map("estimate_sections")
+}
+
+// Estimate scope is derived by joining through sectionId, not a redundant
+// separate estimateId FK — avoids a sync-risk footgun where the two could
+// disagree. costCodeId and costType intentionally coexist: costCodeId is a
+// traceability pointer to whatever cost code was current at entry time
+// (nullable, SetNull), while costType is the frozen classification used for
+// markup rollup math, captured at snapshot time — if a CostCode's
+// classification is later corrected, already-submitted estimates must not
+// silently reclassify. No separate laborHours field: when unit = "HR",
+// quantity *is* hours.
+model EstimateLineItem {
+  id              String                     @id @default(uuid())
+  orgId           String                     @map("org_id")
+  sectionId       String                     @map("section_id")
+  sourceType      EstimateLineItemSourceType @map("source_type")
+  assemblyId      String?                    @map("assembly_id")
+  priceListItemId String?                    @map("price_list_item_id")
+  laborRateId     String?                    @map("labor_rate_id")
+  costCodeId      String?                    @map("cost_code_id")
+
+  description  String
+  unit         String
+  unitCost     Decimal  @map("unit_cost") @db.Decimal(12, 4)
+  quantity     Decimal  @db.Decimal(12, 4)
+  extendedCost Decimal  @map("extended_cost") @db.Decimal(12, 2)
+  costType     CostType @map("cost_type")
+
+  markupOverridePct Decimal? @map("markup_override_pct") @db.Decimal(5, 2)
+  sortOrder         Int      @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  section       EstimateSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  assembly      Assembly?       @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
+  priceListItem PriceListItem?  @relation(fields: [priceListItemId], references: [id], onDelete: SetNull)
+  laborRate     LaborRate?      @relation(fields: [laborRateId], references: [id], onDelete: SetNull)
+  costCode      CostCode?       @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([sectionId])
+  @@map("estimate_line_items")
+}

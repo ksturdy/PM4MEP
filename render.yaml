@@ -1,0 +1,59 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Defines the pm4mep-api and pm4mep-web services plus their Postgres
+# database. Deploy this blueprint once per environment (staging, then
+# production) as two separate Render "projects" — Render Blueprints don't
+# natively template multiple environments from one file, so duplicate this
+# file's values (with a -staging / -prod service name suffix) rather than
+# trying to parameterize a single blueprint across both.
+#
+# Secrets (marked sync: false) must be filled in via the Render dashboard
+# after the first blueprint deploy — never commit real values here.
+
+databases:
+  - name: pm4mep-db
+    plan: starter
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: pm4mep-api
+    runtime: node
+    plan: starter
+    rootDir: apps/api
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @pm4mep/db prisma:generate && pnpm --filter @pm4mep/api build
+    # Runs once per deploy, after build, before traffic shifts to the new
+    # instance. `prisma db execute` (not raw psql) since Render's Node build
+    # image isn't guaranteed to have postgresql-client installed. New RLS
+    # files under packages/db/prisma/rls/ must be added here by hand — same
+    # "no automation, hand-applied SQL" convention as CI and local dev.
+    preDeployCommand: cd ../.. && pnpm --filter @pm4mep/db exec prisma migrate deploy && pnpm --filter @pm4mep/db exec prisma db execute --file prisma/rls/001_enable_rls.sql --schema prisma/schema.prisma && pnpm --filter @pm4mep/db exec prisma db execute --file prisma/rls/002_estimating_rls.sql --schema prisma/schema.prisma
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pm4mep-db
+          property: connectionString
+      - key: PORT
+        value: 4000
+      - key: WEB_APP_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+
+  - type: web
+    name: pm4mep-web
+    runtime: node
+    plan: starter
+    rootDir: apps/web
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @pm4mep/web build
+    startCommand: pnpm --filter @pm4mep/web start
+    envVars:
+      - key: API_BASE_URL
+        fromService:
+          type: web
+          name: pm4mep-api
+          property: hostport
