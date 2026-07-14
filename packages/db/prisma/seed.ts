@@ -13,10 +13,16 @@ const DEMO_PASSWORD = "demo-password-123";
 async function main() {
   const org = await prisma.organization.upsert({
     where: { slug: "demo-mechanical" },
-    update: {},
+    // subscriptionStatus is set on both create and update — it should stay
+    // "Active" even if this seed script gets re-run after the org already
+    // exists, so the demo account keeps working once Stripe is eventually
+    // configured in an environment (billingEnabled would then start
+    // enforcing subscriptionStatus for every other org, but not this one).
+    update: { subscriptionStatus: "Active" },
     create: {
       name: "Demo Mechanical Contracting",
       slug: "demo-mechanical",
+      subscriptionStatus: "Active",
     },
   });
 

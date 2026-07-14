@@ -28,11 +28,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const data = (await res.json()) as {
+    billingEnabled: boolean;
     user: { name: string; email: string };
     organization: { name: string; subscriptionStatus: string };
   };
 
-  if (!SUBSCRIBED_STATUSES.has(data.organization.subscriptionStatus)) {
+  // No Stripe key configured means nothing can ever be charged, so there's
+  // nothing to gate — every org (including the seeded demo account) would
+  // otherwise be stuck at subscriptionStatus "Incomplete" forever with no
+  // way to complete a checkout that was never wired up in this environment.
+  if (data.billingEnabled && !SUBSCRIBED_STATUSES.has(data.organization.subscriptionStatus)) {
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
         <Card className="w-full max-w-sm">

@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { STANDARD_COST_CODES } from "@pm4mep/db";
@@ -14,6 +15,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   async register(input: RegisterInput) {
@@ -82,6 +84,13 @@ export class AuthService {
       this.prisma.organization.findUniqueOrThrow({ where: { id: auth.orgId } }),
     ]);
     return {
+      // (app)/layout.tsx's subscription gate only enforces when billing is
+      // actually operational — without a Stripe key, every org (including
+      // the seeded demo account) sits at subscriptionStatus "Incomplete"
+      // forever with no way to complete checkout, which would otherwise
+      // lock everyone out of an environment that was never configured to
+      // charge anyone in the first place.
+      billingEnabled: Boolean(this.config.get<string>("STRIPE_SECRET_KEY")),
       user: { id: user.id, email: user.email, name: user.name },
       organization: {
         id: org.id,
