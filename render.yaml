@@ -47,6 +47,20 @@ services:
         sync: false
       - key: JWT_EXPIRES_IN
         value: 7d
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ESSENTIALS_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_ESSENTIALS_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_GROWTH_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_GROWTH_ANNUAL
+        sync: false
+      - key: TRIAL_PERIOD_DAYS
+        value: 14
 
   - type: web
     name: pm4mep-web

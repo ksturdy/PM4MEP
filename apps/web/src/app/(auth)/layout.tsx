@@ -7,7 +7,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <Link href="/">
         <Image src="/brand/logo-header.png" alt="PM4MEP" width={107} height={40} className="h-10 w-auto" priority />
       </Link>
-      <div className="w-full max-w-sm">{children}</div>
+      <div className="w-full max-w-md">{children}</div>
     </div>
   );
 }

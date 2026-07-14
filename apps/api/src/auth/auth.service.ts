@@ -83,7 +83,13 @@ export class AuthService {
     ]);
     return {
       user: { id: user.id, email: user.email, name: user.name },
-      organization: { id: org.id, name: org.name, slug: org.slug },
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        plan: org.plan,
+        subscriptionStatus: org.subscriptionStatus,
+      },
     };
   }
 

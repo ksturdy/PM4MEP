@@ -41,6 +41,28 @@ enum AssemblyComponentType {
   LaborRate
 }
 
+enum Plan {
+  Essentials
+  Growth
+  Enterprise
+}
+
+enum BillingCycle {
+  Monthly
+  Annual
+}
+
+enum SubscriptionStatus {
+  Incomplete
+  IncompleteExpired
+  Trialing
+  Active
+  PastDue
+  Canceled
+  Unpaid
+  Paused
+}
+
 // Tenant root. Every tenant-scoped table below carries org_id and is
 // protected by a Postgres RLS policy (see prisma/rls/001_enable_rls.sql,
 // 002_estimating_rls.sql) in addition to being filtered by org_id in
@@ -63,6 +85,20 @@ model Organization {
   email         String?
   licenseNumber String? @map("license_number")
 
+  // Stripe subscription state. subscriptionStatus starts Incomplete at
+  // signup (see AuthService.register) and is only ever advanced by the
+  // billing webhook handler — never written to directly by application
+  // code — so it always reflects Stripe's own view of the subscription.
+  plan                 Plan                @default(Essentials)
+  billingCycle         BillingCycle?       @map("billing_cycle")
+  subscriptionStatus   SubscriptionStatus  @default(Incomplete) @map("subscription_status")
+  stripeCustomerId     String?             @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?             @unique @map("stripe_subscription_id")
+  stripePriceId        String?             @map("stripe_price_id")
+  currentPeriodEnd     DateTime?           @map("current_period_end")
+  cancelAtPeriodEnd    Boolean             @default(false) @map("cancel_at_period_end")
+  trialEndsAt          DateTime?           @map("trial_ends_at")
+
   memberships    Membership[]
   costCodes      CostCode[]
   customers      Customer[]
@@ -73,6 +109,19 @@ model Organization {
   orgSequences   OrgSequence[]
 
   @@map("organizations")
+}
+
+// Records every processed Stripe webhook event id so redeliveries (Stripe
+// retries on any non-2xx response, and can also send outright duplicates)
+// are safely ignored instead of double-applied. No org_id — the org isn't
+// known until the event payload is parsed — so this table is intentionally
+// outside RLS, same as `users`.
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("stripe_events")
 }
 
 // Credentials + identity. passwordHash is bcrypt (see apps/api/src/auth/auth.service.ts);
