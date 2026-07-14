@@ -10,3 +10,4 @@ export * from "./customer.js";
 export * from "./assembly.js";
 export * from "./estimate.js";
 export * from "./billing.js";
+export * from "./invitation.js";

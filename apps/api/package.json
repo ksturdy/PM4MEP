@@ -12,6 +12,8 @@
     "stripe:setup": "ts-node -T -r tsconfig-paths/register scripts/stripe-setup.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1087.0",
+    "@aws-sdk/s3-request-presigner": "^3.1087.0",
     "@fastify/helmet": "^13.0.0",
     "@nestjs/common": "^11.1.28",
     "@nestjs/config": "^4.0.4",
@@ -22,6 +24,7 @@
     "@pm4mep/domain": "workspace:*",
     "@pm4mep/shared-schema": "workspace:*",
     "@react-pdf/renderer": "^4.1.6",
+    "@sendgrid/mail": "^8.1.6",
     "bcryptjs": "^2.4.3",
     "fastify": "^5.2.0",
     "react": "^19.0.0",

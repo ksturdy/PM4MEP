@@ -14,7 +14,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import type { Role } from "@pm4mep/shared-schema";
 import { AppSidebarNav } from "./app-sidebar";
+import { signOut } from "./sign-out-button";
 
 function initials(name: string) {
   return name
@@ -29,17 +31,13 @@ function initials(name: string) {
 export function AppTopbar({
   orgName,
   userName,
+  role,
 }: {
   orgName: string;
   userName: string;
+  role?: Role;
 }) {
   const router = useRouter();
-
-  async function handleSignOut() {
-    await fetch("/api/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
-  }
 
   return (
     <header className="flex h-14 items-center gap-2 border-b border-border bg-background px-4">
@@ -55,7 +53,7 @@ export function AppTopbar({
           <SheetTitle className="flex h-14 items-center border-b border-sidebar-border px-4">
             <Image src="/brand/logo-header.png" alt="PM4MEP" width={96} height={36} className="h-9 w-auto" />
           </SheetTitle>
-          <AppSidebarNav />
+          <AppSidebarNav role={role} />
         </SheetContent>
       </Sheet>
 
@@ -75,7 +73,7 @@ export function AppTopbar({
           <DropdownMenuContent align="end">
             <DropdownMenuLabel className="truncate">{userName}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={handleSignOut}>Sign out</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => signOut(router)}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

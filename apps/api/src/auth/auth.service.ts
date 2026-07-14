@@ -5,6 +5,7 @@ import * as bcrypt from "bcryptjs";
 import { STANDARD_COST_CODES } from "@pm4mep/db";
 import type { LoginInput, RegisterInput } from "@pm4mep/shared-schema";
 import { PrismaService } from "../prisma/prisma.service";
+import type { AuthContext } from "./auth-context";
 import type { JwtPayload } from "./jwt-payload";
 import { slugify } from "./slugify";
 
@@ -78,7 +79,7 @@ export class AuthService {
     });
   }
 
-  async me(auth: { userId: string; orgId: string }) {
+  async me(auth: AuthContext) {
     const [user, org] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({ where: { id: auth.userId } }),
       this.prisma.organization.findUniqueOrThrow({ where: { id: auth.orgId } }),
@@ -91,6 +92,7 @@ export class AuthService {
       // lock everyone out of an environment that was never configured to
       // charge anyone in the first place.
       billingEnabled: Boolean(this.config.get<string>("STRIPE_SECRET_KEY")),
+      role: auth.role,
       user: { id: user.id, email: user.email, name: user.name },
       organization: {
         id: org.id,
@@ -102,7 +104,10 @@ export class AuthService {
     };
   }
 
-  private issueSession(input: {
+  // Public: also called by TeamService when an invite is accepted, so
+  // accepting an invite logs the new member in the same way register()/
+  // login() do, without duplicating JWT-issuing logic.
+  issueSession(input: {
     userId: string;
     email: string;
     name: string;

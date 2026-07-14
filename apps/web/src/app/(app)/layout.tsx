@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Role } from "@pm4mep/shared-schema";
 import { apiFetch } from "@/lib/api";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
+import { SignOutButton } from "@/components/sign-out-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -29,6 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const data = (await res.json()) as {
     billingEnabled: boolean;
+    role: Role;
     user: { name: string; email: string };
     organization: { name: string; subscriptionStatus: string };
   };
@@ -47,8 +50,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Your account is created, but billing isn&apos;t set up yet — pick a plan to get into your dashboard.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-3">
             <Button className="w-full" nativeButton={false} render={<Link href="/billing/manage">Complete subscription</Link>} />
+            <SignOutButton className="text-center text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
+              Sign out
+            </SignOutButton>
           </CardContent>
         </Card>
       </div>
@@ -57,9 +63,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-dvh overflow-hidden">
-      <AppSidebar />
+      <AppSidebar role={data.role} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <AppTopbar orgName={data.organization.name} userName={data.user.name} />
+        <AppTopbar orgName={data.organization.name} userName={data.user.name} role={data.role} />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>

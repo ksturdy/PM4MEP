@@ -1,4 +1,4 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { Prisma } from "@pm4mep/db";
 import type { Decimal, EstimateRollupResult } from "@pm4mep/domain";
 
@@ -6,6 +6,7 @@ const styles = StyleSheet.create({
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", color: "#1a1a1a" },
   headerRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 16 },
   orgName: { fontSize: 16, fontWeight: 700 },
+  logo: { width: 120, maxHeight: 60, objectFit: "contain", marginBottom: 6 },
   small: { fontSize: 9, color: "#555" },
   title: { fontSize: 18, fontWeight: 700, textAlign: "right" },
   section: { marginBottom: 14 },
@@ -78,6 +79,7 @@ export function ProposalDocument({
       <Page size="LETTER" style={styles.page}>
         <View style={styles.headerRow}>
           <View>
+            {org.logoUrl && <Image src={org.logoUrl} style={styles.logo} />}
             <Text style={styles.orgName}>{org.name}</Text>
             {org.addressLine1 && <Text style={styles.small}>{org.addressLine1}</Text>}
             {(org.city || org.state || org.postalCode) && (

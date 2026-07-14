@@ -5,6 +5,7 @@ import type { SignOptions } from "jsonwebtoken";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { RolesGuard } from "./roles.guard";
 
 @Module({
   imports: [
@@ -23,7 +24,10 @@ import { JwtAuthGuard } from "./jwt-auth.guard";
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard],
-  exports: [JwtModule, JwtAuthGuard],
+  providers: [AuthService, JwtAuthGuard, RolesGuard],
+  // AuthService exported so TeamModule can reuse issueSession() when an
+  // invite is accepted — same JWT-issuing logic as register()/login(),
+  // no need to duplicate it.
+  exports: [JwtModule, JwtAuthGuard, RolesGuard, AuthService],
 })
 export class AuthModule {}

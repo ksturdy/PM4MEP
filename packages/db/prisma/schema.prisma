@@ -74,8 +74,10 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Proposal letterhead. No logo yet — that needs file storage (R2), not
-  // wired up until a later phase.
+  // Proposal letterhead. logoUrl points at an object in Cloudflare R2
+  // (apps/api/src/storage/r2.service.ts) — the client uploads directly to
+  // R2 via a presigned URL, then PATCHes this field with the resulting
+  // public URL, so this column never stores anything but a URL.
   addressLine1  String? @map("address_line1")
   addressLine2  String? @map("address_line2")
   city          String?
@@ -84,6 +86,7 @@ model Organization {
   phone         String?
   email         String?
   licenseNumber String? @map("license_number")
+  logoUrl       String? @map("logo_url")
 
   // Stripe subscription state. subscriptionStatus starts Incomplete at
   // signup (see AuthService.register) and is only ever advanced by the
@@ -100,6 +103,7 @@ model Organization {
   trialEndsAt          DateTime?           @map("trial_ends_at")
 
   memberships    Membership[]
+  invitations    Invitation[]
   costCodes      CostCode[]
   customers      Customer[]
   priceListItems PriceListItem[]
@@ -156,6 +160,33 @@ model Membership {
   @@unique([userId, orgId])
   @@index([orgId])
   @@map("memberships")
+}
+
+// Pending team invites. Not RLS-scoped, same reasoning as `organizations`
+// (see prisma/rls/001_enable_rls.sql): the accept flow looks this up by a
+// unique random token the invitee already legitimately possesses (from the
+// emailed link), not by any org-scoped listing, so RLS earns nothing here
+// and would actively break the unauthenticated accept-invite lookup. The
+// authenticated team-management endpoints (list/revoke pending invites)
+// still filter by orgId explicitly in the query, same double-safety
+// pattern used elsewhere. tokenHash, not the raw token, is stored — same
+// defense-in-depth reasoning as password hashing.
+model Invitation {
+  id         String    @id @default(uuid())
+  orgId      String    @map("org_id")
+  email      String
+  role       Role
+  tokenHash  String    @unique @map("token_hash")
+  invitedBy  String    @map("invited_by")
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, email])
+  @@index([orgId])
+  @@map("invitations")
 }
 
 // Seeded with standard MCAA/NECA-style codes per org on creation; editable

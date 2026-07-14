@@ -3,15 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { Role } from "@pm4mep/shared-schema";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav-items";
 
-export function AppSidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+export function AppSidebarNav({ onNavigate, role }: { onNavigate?: () => void; role?: Role }) {
   const pathname = usePathname();
+  // Convenience hiding only — the API enforces role checks server-side too
+  // (see RolesGuard/@Roles in apps/api/src/team), this isn't the boundary.
+  const items = NAV_ITEMS.filter((item) => !item.roles || (role && item.roles.includes(role)));
 
   return (
     <nav className="flex flex-col gap-1 p-3">
-      {NAV_ITEMS.map((item) => {
+      {items.map((item) => {
         // Prefix match, not exact — Estimating (and future sections with
         // sub-routes) should stay highlighted while on any of their nested
         // pages (e.g. /estimating/price-list), not just the bare path.
@@ -56,13 +60,13 @@ export function AppSidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function AppSidebar() {
+export function AppSidebar({ role }: { role?: Role }) {
   return (
     <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
         <Image src="/brand/logo-header.png" alt="PM4MEP" width={96} height={36} className="h-9 w-auto" priority />
       </div>
-      <AppSidebarNav />
+      <AppSidebarNav role={role} />
     </aside>
   );
 }
