@@ -4,7 +4,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { CatalogWebSearchResultSchema, type CatalogWebSearchResult } from "@pm4mep/shared-schema";
 import { z } from "zod";
 
-const MODEL = "claude-opus-4-8";
+// Haiku 4.5 (cheapest/fastest tier) — chosen over Opus 4.8/Sonnet 5 for
+// per-search cost after an early Opus 4.8 test search came in at ~$0.31.
+// Haiku 4.5 doesn't support adaptive thinking, the `effort` param, or the
+// dynamic-filtering (_20260209) web_search/web_fetch tool variants — all
+// three are omitted/downgraded below accordingly, not left in by mistake.
+const MODEL = "claude-haiku-4-5";
 
 const SYSTEM_PROMPT = `You help HVAC/MEP contractors find equipment to add to a price catalog. Given the name of
 a piece of equipment, search the web for it and return up to 5 real, distinct matches.
@@ -70,17 +75,18 @@ export class CatalogWebSearchService {
     const response = await this.anthropic.messages.create({
       model: MODEL,
       max_tokens: 4096,
-      thinking: { type: "adaptive" },
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Find equipment matching: ${query}` }],
       // web_fetch is what actually lets Claude read a product page's HTML
       // and pull a real image/PDF URL out of it — web_search alone only
-      // returns snippets, which rarely contain a direct file link.
+      // returns snippets, which rarely contain a direct file link. Basic
+      // (non-_20260209) tool versions — Haiku 4.5 isn't on the model list
+      // that supports the dynamic-filtering variants.
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 4 },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 },
+        { type: "web_search_20250305", name: "web_search", max_uses: 4 },
+        { type: "web_fetch_20250910", name: "web_fetch", max_uses: 4 },
       ],
-      output_config: { effort: "medium", format: responseFormat },
+      output_config: { format: responseFormat },
     });
 
     const textBlock = response.content.find((block): block is Anthropic.TextBlock => block.type === "text");
