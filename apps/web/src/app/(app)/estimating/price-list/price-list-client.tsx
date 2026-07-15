@@ -8,12 +8,10 @@ import {
   CATALOG_PHOTO_CONTENT_TYPES,
   CATALOG_SPEC_SHEET_CONTENT_TYPES,
   PriceListItemCreateSchema,
-  PriceListItemFromWebResultCreateSchema,
   type CatalogWebSearchResult,
   type CostCode,
   type PriceListItem,
   type PriceListItemCreate,
-  type PriceListItemFromWebResultCreate,
   type PriceListItemPhotoUploadUrlRequest,
   type PriceListItemSpecSheetUploadUrlRequest,
 } from "@pm4mep/shared-schema";
@@ -378,64 +376,74 @@ function EditPriceListItemDialog({ item, costCodes }: { item: PriceListItem; cos
   );
 }
 
-// The form shown after picking a web search result — cost code and unit
-// cost are never known from the web, so they're required here even though
-// everything else arrives pre-filled. Submits through the from-web-result
-// endpoint, which re-hosts the picked photo/spec-sheet to R2 server-side
-// rather than uploading through this form.
-function WebResultForm({
-  result,
+// The review step after selecting one or more web search results — cost
+// code and unit cost are never known from the web, so they're required here
+// even though everything else arrives pre-filled. Description/manufacturer/
+// model are shown read-only (editable afterward via the normal Edit dialog)
+// to keep a multi-item review form manageable. Submits each selected result
+// through the from-web-result endpoint sequentially; imageUrl/specSheetUrl
+// are threaded through directly from the search result rather than via a
+// form field, since they're never user-editable here.
+function WebResultsBatchForm({
+  results,
   costCodes,
   onSuccess,
 }: {
-  result: CatalogWebSearchResult;
+  results: CatalogWebSearchResult[];
   costCodes: CostCode[];
   onSuccess: () => void;
 }) {
   const router = useRouter();
-  const [serverError, setServerError] = useState<string | null>(null);
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    formState: { errors, isSubmitting },
-  } = useForm<PriceListItemFromWebResultCreate>({
-    resolver: zodResolver(PriceListItemFromWebResultCreateSchema),
-    defaultValues: {
-      costCodeId: costCodes[0]?.id ?? "",
-      description: result.description,
-      manufacturer: result.manufacturer ?? undefined,
-      modelNumber: result.modelNumber ?? undefined,
-      unit: "",
-      unitCost: 0,
-      imageUrl: result.imageUrl ?? undefined,
-      specSheetUrl: result.specSheetUrl ?? undefined,
-    },
-  });
+  const [costCodeId, setCostCodeId] = useState(costCodes[0]?.id ?? "");
+  const [rows, setRows] = useState(() => results.map(() => ({ unit: "", unitCost: "" })));
+  const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
+  const [submitting, setSubmitting] = useState(false);
 
-  async function submit(values: PriceListItemFromWebResultCreate) {
-    setServerError(null);
-    const outcome = await createPriceListItemFromWebResult(values);
-    if (!outcome.ok) {
-      setServerError(outcome.error ?? "Something went wrong");
-      return;
+  function updateRow(i: number, patch: Partial<{ unit: string; unitCost: string }>) {
+    setRows((prev) => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+  }
+
+  async function submit() {
+    setSubmitting(true);
+    const nextErrors: Record<number, string> = {};
+    let succeeded = 0;
+
+    for (let i = 0; i < results.length; i++) {
+      const row = rows[i]!;
+      const result = results[i]!;
+      const unitCost = Number(row.unitCost);
+      if (!row.unit.trim() || !row.unitCost.trim() || Number.isNaN(unitCost) || unitCost < 0) {
+        nextErrors[i] = "Unit and unit cost are required.";
+        continue;
+      }
+      const outcome = await createPriceListItemFromWebResult({
+        costCodeId,
+        description: result.description,
+        manufacturer: result.manufacturer ?? undefined,
+        modelNumber: result.modelNumber ?? undefined,
+        unit: row.unit.trim(),
+        unitCost,
+        imageUrl: result.imageUrl ?? undefined,
+        specSheetUrl: result.specSheetUrl ?? undefined,
+      });
+      if (outcome.ok) {
+        succeeded++;
+      } else {
+        nextErrors[i] = outcome.error ?? "Failed to add.";
+      }
     }
-    onSuccess();
-    router.refresh();
+
+    setSubmitting(false);
+    setRowErrors(nextErrors);
+    if (succeeded > 0) router.refresh();
+    if (Object.keys(nextErrors).length === 0) onSuccess();
   }
 
   return (
-    <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4">
-      {result.imageUrl && (
-        <img src={result.imageUrl} alt="" className="h-24 w-24 rounded border border-border object-contain p-1" />
-      )}
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <Label>Cost code</Label>
-        <Select
-          value={watch("costCodeId")}
-          onValueChange={(value) => value && setValue("costCodeId", value)}
-        >
+        <Label>Cost code (applies to all selected items)</Label>
+        <Select value={costCodeId} onValueChange={(value) => value && setCostCodeId(value)}>
           <SelectTrigger>
             <SelectValue placeholder="Select a cost code">
               {(value: string) => {
@@ -453,43 +461,62 @@ function WebResultForm({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="wr-description">Description</Label>
-        <Input id="wr-description" {...register("description")} />
-        {errors.description && <p className="text-sm text-destructive">{errors.description.message}</p>}
+      <div className="flex max-h-96 flex-col gap-3 overflow-y-auto">
+        {results.map((result, i) => (
+          <div key={i} className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <div className="flex items-start gap-3">
+              {result.imageUrl ? (
+                <img
+                  src={result.imageUrl}
+                  alt=""
+                  className="h-12 w-12 shrink-0 rounded border border-border object-contain p-1"
+                />
+              ) : (
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[9px] leading-tight text-muted-foreground">
+                  No photo found
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">
+                  {[result.manufacturer, result.modelNumber].filter(Boolean).join(" ") || result.description}
+                </p>
+                <p className="line-clamp-2 text-xs text-muted-foreground">{result.description}</p>
+              </div>
+              {result.specSheetUrl && (
+                <Badge variant="secondary" className="shrink-0">
+                  Spec sheet
+                </Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">Unit</Label>
+                <Input
+                  placeholder="EA, LF…"
+                  value={rows[i]!.unit}
+                  onChange={(e) => updateRow(i, { unit: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">Unit cost ($)</Label>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  value={rows[i]!.unitCost}
+                  onChange={(e) => updateRow(i, { unitCost: e.target.value })}
+                />
+              </div>
+            </div>
+            {rowErrors[i] && <p className="text-xs text-destructive">{rowErrors[i]}</p>}
+          </div>
+        ))}
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="wr-manufacturer">Manufacturer</Label>
-          <Input id="wr-manufacturer" {...register("manufacturer")} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="wr-modelNumber">Model #</Label>
-          <Input id="wr-modelNumber" {...register("modelNumber")} />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="wr-unit">Unit</Label>
-          <Input id="wr-unit" placeholder="EA, LF…" {...register("unit")} />
-          {errors.unit && <p className="text-sm text-destructive">{errors.unit.message}</p>}
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="wr-unitCost">Unit cost ($)</Label>
-          <Input id="wr-unitCost" type="number" step="0.0001" {...register("unitCost", { valueAsNumber: true })} />
-          {errors.unitCost && <p className="text-sm text-destructive">{errors.unitCost.message}</p>}
-        </div>
-      </div>
-      {result.specSheetUrl && (
-        <p className="text-xs text-muted-foreground">A spec sheet was found and will be saved with this item.</p>
-      )}
-      {serverError && <p className="text-sm text-destructive">{serverError}</p>}
       <DialogFooter>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Saving…" : "Add to catalog"}
+        <Button type="button" onClick={submit} disabled={submitting || !costCodeId}>
+          {submitting ? "Adding…" : `Add ${results.length} item${results.length === 1 ? "" : "s"}`}
         </Button>
       </DialogFooter>
-    </form>
+    </div>
   );
 }
 
@@ -499,12 +526,14 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<CatalogWebSearchResult[] | null>(null);
-  const [picked, setPicked] = useState<CatalogWebSearchResult | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [reviewing, setReviewing] = useState(false);
 
   async function runSearch() {
     if (!query.trim()) return;
     setSearching(true);
     setError(null);
+    setSelected(new Set());
     const result = await searchCatalogWeb({ query: query.trim() });
     setSearching(false);
     if (!result.ok) {
@@ -514,12 +543,24 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
     setResults(result.data);
   }
 
+  function toggle(i: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+
   function reset() {
     setQuery("");
     setResults(null);
-    setPicked(null);
+    setSelected(new Set());
+    setReviewing(false);
     setError(null);
   }
+
+  const selectedResults = results ? Array.from(selected).map((i) => results[i]!) : [];
 
   return (
     <Dialog
@@ -532,11 +573,11 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
       <DialogTrigger render={<Button variant="outline">Search the web</Button>} />
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{picked ? "Add to catalog" : "Search the web for equipment"}</DialogTitle>
+          <DialogTitle>{reviewing ? "Add to catalog" : "Search the web for equipment"}</DialogTitle>
         </DialogHeader>
-        {picked ? (
-          <WebResultForm
-            result={picked}
+        {reviewing ? (
+          <WebResultsBatchForm
+            results={selectedResults}
             costCodes={costCodes}
             onSuccess={() => {
               setOpen(false);
@@ -556,35 +597,67 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
                 {searching ? "Searching…" : "Search"}
               </Button>
             </div>
+            {searching && (
+              <p className="text-xs text-muted-foreground">
+                This can take up to a minute or two — Claude is searching the web and reading product
+                pages to find real photos and spec sheets.
+              </p>
+            )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             {results && results.length === 0 && (
               <p className="text-sm text-muted-foreground">No matches found — try a different search.</p>
             )}
             {results && results.length > 0 && (
-              <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
-                {results.map((result, i) => (
-                  <Card key={i} className="cursor-pointer hover:bg-accent" onClick={() => setPicked(result)}>
-                    <CardContent className="flex items-center gap-3 p-3">
-                      {result.imageUrl ? (
-                        <img
-                          src={result.imageUrl}
-                          alt=""
-                          className="h-12 w-12 shrink-0 rounded border border-border object-contain p-1"
+              <>
+                <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
+                  {results.map((result, i) => (
+                    <Card
+                      key={i}
+                      className={`cursor-pointer ${selected.has(i) ? "ring-2 ring-primary" : "hover:bg-accent"}`}
+                      onClick={() => toggle(i)}
+                    >
+                      <CardContent className="flex items-start gap-3 p-3">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(i)}
+                          onChange={() => toggle(i)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-1 shrink-0"
+                          aria-label={`Select ${result.description}`}
                         />
-                      ) : (
-                        <div className="h-12 w-12 shrink-0 rounded border border-dashed border-border" />
-                      )}
-                      <div className="flex flex-1 flex-col">
-                        <span className="text-sm font-medium">
-                          {[result.manufacturer, result.modelNumber].filter(Boolean).join(" ") || result.description}
-                        </span>
-                        <span className="text-xs text-muted-foreground">{result.description}</span>
-                      </div>
-                      {result.specSheetUrl && <Badge variant="secondary">Spec sheet</Badge>}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                        {result.imageUrl ? (
+                          <img
+                            src={result.imageUrl}
+                            alt=""
+                            className="h-12 w-12 shrink-0 rounded border border-border object-contain p-1"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[9px] leading-tight text-muted-foreground">
+                            No photo found
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">
+                            {[result.manufacturer, result.modelNumber].filter(Boolean).join(" ") ||
+                              result.description}
+                          </p>
+                          <p className="line-clamp-2 text-xs text-muted-foreground">{result.description}</p>
+                        </div>
+                        {result.specSheetUrl && (
+                          <Badge variant="secondary" className="shrink-0">
+                            Spec sheet
+                          </Badge>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button type="button" disabled={selected.size === 0} onClick={() => setReviewing(true)}>
+                    Add {selected.size || ""} selected
+                  </Button>
+                </DialogFooter>
+              </>
             )}
           </div>
         )}

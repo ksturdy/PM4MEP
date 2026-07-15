@@ -9,11 +9,13 @@ const MODEL = "claude-opus-4-8";
 const SYSTEM_PROMPT = `You help HVAC/MEP contractors find equipment to add to a price catalog. Given the name of
 a piece of equipment, search the web for it and return up to 5 real, distinct matches.
 
-Prefer manufacturer sites and authorized-distributor pages over marketplaces or forums. Only set
-imageUrl/specSheetUrl when you found a direct, working link to an actual image file or PDF document
-(not a general product page) — it is fine and expected to leave these null when you can't find one.
-Never invent a manufacturer, model number, or URL — if you're not confident a field is correct, leave
-it null rather than guessing.`;
+Prefer manufacturer sites and authorized-distributor pages over marketplaces or forums. Search result
+snippets alone rarely contain a direct image or PDF link — for each promising match, fetch its product
+or spec-sheet page so you can find a real, direct URL for a product photo (an actual image file, not a
+general product page) and, if available, a spec-sheet PDF. Only set imageUrl/specSheetUrl when you found
+a direct, working link to an actual image file or PDF document — it is fine and expected to leave these
+null when a page genuinely doesn't have one. Never invent a manufacturer, model number, or URL — if
+you're not confident a field is correct, leave it null rather than guessing.`;
 
 const responseFormat = {
   type: "json_schema" as const,
@@ -71,7 +73,13 @@ export class CatalogWebSearchService {
       thinking: { type: "adaptive" },
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Find equipment matching: ${query}` }],
-      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
+      // web_fetch is what actually lets Claude read a product page's HTML
+      // and pull a real image/PDF URL out of it — web_search alone only
+      // returns snippets, which rarely contain a direct file link.
+      tools: [
+        { type: "web_search_20260209", name: "web_search", max_uses: 4 },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 },
+      ],
       output_config: { effort: "medium", format: responseFormat },
     });
 
