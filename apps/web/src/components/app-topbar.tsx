@@ -31,10 +31,12 @@ function initials(name: string) {
 
 export function AppTopbar({
   orgName,
+  orgLogoUrl,
   userName,
   role,
 }: {
   orgName: string;
+  orgLogoUrl?: string | null;
   userName: string;
   role?: Role;
 }) {
@@ -61,6 +63,9 @@ export function AppTopbar({
       <span className="truncate font-medium text-foreground">{orgName}</span>
 
       <div className="ml-auto flex items-center gap-3">
+        {orgLogoUrl && (
+          <img src={orgLogoUrl} alt={`${orgName} logo`} className="h-8 w-auto max-w-32 object-contain" />
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={

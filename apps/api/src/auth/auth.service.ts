@@ -112,6 +112,7 @@ export class AuthService {
         slug: org.slug,
         plan: org.plan,
         subscriptionStatus: org.subscriptionStatus,
+        logoUrl: org.logoUrl,
       },
     };
   }

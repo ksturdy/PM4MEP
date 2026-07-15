@@ -33,7 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     billingEnabled: boolean;
     role: Role;
     user: { name: string; email: string };
-    organization: { name: string; subscriptionStatus: string };
+    organization: { name: string; subscriptionStatus: string; logoUrl: string | null };
   };
 
   // No Stripe key configured means nothing can ever be charged, so there's
@@ -65,7 +65,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex h-dvh overflow-hidden">
       <AppSidebar role={data.role} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <AppTopbar orgName={data.organization.name} userName={data.user.name} role={data.role} />
+        <AppTopbar
+          orgName={data.organization.name}
+          orgLogoUrl={data.organization.logoUrl}
+          userName={data.user.name}
+          role={data.role}
+        />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
