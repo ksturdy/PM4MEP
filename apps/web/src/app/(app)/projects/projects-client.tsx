@@ -6,10 +6,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import {
-  EstimateCreateSchema,
+  ProjectCreateSchema,
   type Customer,
-  type EstimateCreate,
-  type EstimateListItem,
+  type ProjectCreate,
+  type ProjectListItem,
 } from "@pm4mep/shared-schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,16 +26,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
-import { createEstimate } from "./actions";
+import { createProject } from "./actions";
 
-const STATUS_VARIANT: Record<string, "secondary" | "default" | "destructive"> = {
-  Draft: "secondary",
-  Submitted: "default",
-  Won: "default",
-  Lost: "destructive",
+export const STATUS_VARIANT: Record<string, "secondary" | "default" | "destructive"> = {
+  Planning: "secondary",
+  Active: "default",
+  OnHold: "secondary",
+  Complete: "default",
+  Cancelled: "destructive",
 };
 
-function NewEstimateDialog({ customers }: { customers: Customer[] }) {
+function NewProjectDialog({ customers }: { customers: Customer[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -45,28 +46,28 @@ function NewEstimateDialog({ customers }: { customers: Customer[] }) {
     watch,
     setValue,
     formState: { errors, isSubmitting },
-  } = useForm<EstimateCreate>({
-    resolver: zodResolver(EstimateCreateSchema),
+  } = useForm<ProjectCreate>({
+    resolver: zodResolver(ProjectCreateSchema),
     defaultValues: { customerId: customers[0]?.id ?? "", name: "" },
   });
 
-  async function submit(values: EstimateCreate) {
+  async function submit(values: ProjectCreate) {
     setServerError(null);
-    const result = await createEstimate(values);
+    const result = await createProject(values);
     if (!result.ok) {
       setServerError(result.error ?? "Something went wrong");
       return;
     }
     setOpen(false);
-    router.push(`/estimating/estimates/${result.data.id}`);
+    router.push(`/projects/${result.data.id}`);
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button>New estimate</Button>} />
+      <DialogTrigger render={<Button>New project</Button>} />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New estimate</DialogTitle>
+          <DialogTitle>New project</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
@@ -91,14 +92,24 @@ function NewEstimateDialog({ customers }: { customers: Customer[] }) {
             {errors.customerId && <p className="text-sm text-destructive">{errors.customerId.message}</p>}
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="name">Estimate name</Label>
+            <Label htmlFor="name">Project name</Label>
             <Input id="name" placeholder="123 Main St — RTU Replacement" {...register("name")} />
             {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="startDate">Start date</Label>
+              <Input id="startDate" type="date" {...register("startDate")} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="targetCompletionDate">Target completion</Label>
+              <Input id="targetCompletionDate" type="date" {...register("targetCompletionDate")} />
+            </div>
           </div>
           {serverError && <p className="text-sm text-destructive">{serverError}</p>}
           <DialogFooter>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Creating…" : "Create estimate"}
+              {isSubmitting ? "Creating…" : "Create project"}
             </Button>
           </DialogFooter>
         </form>
@@ -107,17 +118,17 @@ function NewEstimateDialog({ customers }: { customers: Customer[] }) {
   );
 }
 
-export function EstimatesClient({
-  estimates,
+export function ProjectsClient({
+  projects,
   customers,
 }: {
-  estimates: EstimateListItem[];
+  projects: ProjectListItem[];
   customers: Customer[];
 }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
-        <NewEstimateDialog customers={customers} />
+        <NewProjectDialog customers={customers} />
       </div>
       <div className="rounded-lg border border-border">
         <Table>
@@ -127,35 +138,41 @@ export function EstimatesClient({
               <TableHead>Name</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Sell price</TableHead>
+              <TableHead>PM</TableHead>
+              <TableHead>Budget</TableHead>
+              <TableHead>Actual</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {estimates.length === 0 && (
+            {projects.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  No estimates yet.
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  No projects yet — convert a Won estimate or create one from scratch.
                 </TableCell>
               </TableRow>
             )}
-            {estimates.map((estimate) => (
-              <TableRow key={estimate.id}>
-                <TableCell className="font-medium">{estimate.number}</TableCell>
-                <TableCell>{estimate.name}</TableCell>
-                <TableCell>{estimate.customerName}</TableCell>
+            {projects.map((project) => (
+              <TableRow key={project.id}>
+                <TableCell className="font-medium">{project.number}</TableCell>
+                <TableCell>{project.name}</TableCell>
+                <TableCell>{project.customerName}</TableCell>
                 <TableCell>
-                  <Badge variant={STATUS_VARIANT[estimate.status]}>{estimate.status}</Badge>
+                  <Badge variant={STATUS_VARIANT[project.status]}>{project.status}</Badge>
                 </TableCell>
-                <TableCell>
-                  {formatCurrency(estimate.finalSellPriceOverride ?? estimate.calculatedSellPrice)}
+                <TableCell className="text-muted-foreground">{project.projectManagerName ?? "—"}</TableCell>
+                <TableCell>{formatCurrency(project.totalBudget)}</TableCell>
+                <TableCell
+                  className={project.totalActualCost > project.totalBudget ? "text-destructive" : undefined}
+                >
+                  {formatCurrency(project.totalActualCost)}
                 </TableCell>
                 <TableCell>
                   <Button
                     variant="ghost"
                     size="sm"
                     nativeButton={false}
-                    render={<Link href={`/estimating/estimates/${estimate.id}`}>Open</Link>}
+                    render={<Link href={`/projects/${project.id}`}>Open</Link>}
                   />
                 </TableCell>
               </TableRow>

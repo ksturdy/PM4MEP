@@ -42,6 +42,52 @@ const DEFAULT_MARKUP_CONFIG = {
 export class EstimatingService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async pipelineSummary(orgId: string) {
+    return this.prisma.withTenant(orgId, async (tx) => {
+      const [statusCounts, openEstimates, upcoming] = await Promise.all([
+        tx.estimate.groupBy({ by: ["status"], where: { orgId }, _count: true }),
+        tx.estimate.findMany({
+          where: { orgId, status: { in: ["Draft", "Submitted"] } },
+          select: { calculatedSellPrice: true, finalSellPriceOverride: true },
+        }),
+        tx.estimate.findMany({
+          where: { orgId, status: "Submitted", bidDueDate: { gte: new Date() } },
+          orderBy: { bidDueDate: "asc" },
+          take: 5,
+          include: { customer: { select: { name: true } } },
+        }),
+      ]);
+
+      const countFor = (status: string) => statusCounts.find((s) => s.status === status)?._count ?? 0;
+      const wonCount = countFor("Won");
+      const lostCount = countFor("Lost");
+      const winRate = wonCount + lostCount === 0 ? null : (wonCount / (wonCount + lostCount)) * 100;
+
+      const openPipelineValue = openEstimates.reduce(
+        (sum, e) => sum + Number(e.finalSellPriceOverride ?? e.calculatedSellPrice),
+        0,
+      );
+
+      return {
+        statusCounts: {
+          Draft: countFor("Draft"),
+          Submitted: countFor("Submitted"),
+          Won: wonCount,
+          Lost: lostCount,
+        },
+        openPipelineValue,
+        winRate,
+        upcomingBidDueDates: upcoming.map((e) => ({
+          id: e.id,
+          number: e.number,
+          name: e.name,
+          customerName: e.customer.name,
+          bidDueDate: e.bidDueDate,
+        })),
+      };
+    });
+  }
+
   list(orgId: string) {
     return this.prisma
       .withTenant(orgId, (tx) =>
@@ -72,6 +118,7 @@ export class EstimatingService {
         include: {
           customer: true,
           createdBy: true,
+          project: { select: { id: true } },
           sections: {
             orderBy: { sortOrder: "asc" },
             include: { lineItems: { orderBy: { sortOrder: "asc" } } },
@@ -99,6 +146,7 @@ export class EstimatingService {
         ...estimate,
         customerName: estimate.customer.name,
         createdByName: estimate.createdBy.name,
+        projectId: estimate.project?.id ?? null,
         rollup: { ...rollup, resolvedSellPrice, resolvedSellPriceWithTax },
       };
     });
@@ -142,9 +190,19 @@ export class EstimatingService {
 
   async transitionStatus(orgId: string, id: string, newStatus: EstimateStatus) {
     return this.prisma.withTenant(orgId, async (tx) => {
-      const estimate = await tx.estimate.findUniqueOrThrow({ where: { id } });
+      const estimate = await tx.estimate.findUniqueOrThrow({ where: { id }, include: { project: true } });
       if (!canTransition(estimate.status as EstimateStatus, newStatus)) {
         throw new BadRequestException(`Cannot transition an estimate from ${estimate.status} to ${newStatus}`);
+      }
+      // Won -> Draft is otherwise a valid correction path, but once a
+      // Project has been created off this estimate (see
+      // POST /projects/from-estimate/:estimateId), reverting the source
+      // estimate to Draft would leave the Project pointing at a
+      // now-non-Won estimate with no defined meaning.
+      if (estimate.status === "Won" && newStatus === "Draft" && estimate.project) {
+        throw new BadRequestException(
+          "Cannot revert this estimate to Draft — a project has already been created from it",
+        );
       }
       return tx.estimate.update({ where: { id }, data: { status: newStatus } });
     });

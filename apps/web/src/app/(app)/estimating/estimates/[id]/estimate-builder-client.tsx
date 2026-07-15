@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -37,6 +38,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatCurrency, formatCurrencyPrecise } from "@/lib/format";
 import {
   addFromAssembly,
   addManualLineItem,
@@ -47,6 +49,7 @@ import {
   updateEstimate,
   updateLineItem,
 } from "../actions";
+import { createProjectFromEstimate } from "../../../projects/actions";
 
 const STATUS_VARIANT: Record<string, "secondary" | "default" | "destructive"> = {
   Draft: "secondary",
@@ -638,8 +641,8 @@ function SectionCard({
                   <TableCell>
                     {lineItem.quantity} {lineItem.unit}
                   </TableCell>
-                  <TableCell>${lineItem.unitCost.toFixed(2)}</TableCell>
-                  <TableCell>${lineItem.extendedCost.toFixed(2)}</TableCell>
+                  <TableCell>{formatCurrencyPrecise(lineItem.unitCost)}</TableCell>
+                  <TableCell>{formatCurrency(lineItem.extendedCost)}</TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
                       <EditLineItemDialog estimateId={estimate.id} lineItem={lineItem} />
@@ -686,32 +689,32 @@ function SummaryCard({ estimate }: { estimate: EstimateWithDetails }) {
         {(["labor", "material", "equipment", "subcontract", "other"] as const).map((type) => (
           <div key={type} className="flex justify-between">
             <span className="text-muted-foreground">{COST_TYPE_LABELS[type]} (marked up)</span>
-            <span>${rollup.markedUpByType[type].toFixed(2)}</span>
+            <span>{formatCurrency(rollup.markedUpByType[type])}</span>
           </div>
         ))}
         <div className="flex justify-between border-t border-border pt-2 font-medium">
           <span>Marked-up subtotal</span>
-          <span>${rollup.totalMarkedUpCost.toFixed(2)}</span>
+          <span>{formatCurrency(rollup.totalMarkedUpCost)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Overhead</span>
-          <span>${rollup.overheadAmount.toFixed(2)}</span>
+          <span>{formatCurrency(rollup.overheadAmount)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Profit</span>
-          <span>${rollup.profitAmount.toFixed(2)}</span>
+          <span>{formatCurrency(rollup.profitAmount)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Contingency</span>
-          <span>${rollup.contingencyAmount.toFixed(2)}</span>
+          <span>{formatCurrency(rollup.contingencyAmount)}</span>
         </div>
         <div className="flex justify-between border-t border-border pt-2 font-medium">
           <span>Calculated sell price</span>
-          <span>${rollup.calculatedSellPrice.toFixed(2)}</span>
+          <span>{formatCurrency(rollup.calculatedSellPrice)}</span>
         </div>
         <div className="flex justify-between text-muted-foreground">
           <span>With tax ({estimate.taxPct}%)</span>
-          <span>${rollup.resolvedSellPriceWithTax.toFixed(2)}</span>
+          <span>{formatCurrency(rollup.resolvedSellPriceWithTax)}</span>
         </div>
 
         <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
@@ -732,7 +735,7 @@ function SummaryCard({ estimate }: { estimate: EstimateWithDetails }) {
           {estimate.finalSellPriceOverride !== null && (
             <p className="text-xs text-muted-foreground">
               {variance >= 0 ? "+" : ""}
-              ${variance.toFixed(2)} vs. calculated
+              {formatCurrency(variance)} vs. calculated
             </p>
           )}
         </div>
@@ -768,6 +771,51 @@ function ProposalLinks({ estimateId }: { estimateId: string }) {
   );
 }
 
+// A Won estimate can be converted into a Project at most once (see
+// Project.estimateId's unique constraint) — shows "Create project" until
+// that happens, then "View project" once estimate.projectId is set.
+function ProjectLinkControl({ estimateId, status, projectId }: { estimateId: string; status: EstimateStatus; projectId: string | null }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  if (status !== "Won") {
+    return null;
+  }
+
+  if (projectId) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        nativeButton={false}
+        render={<Link href={`/projects/${projectId}`}>View project</Link>}
+      />
+    );
+  }
+
+  async function handleCreate() {
+    setPending(true);
+    setServerError(null);
+    const result = await createProjectFromEstimate(estimateId, {});
+    if (!result.ok) {
+      setServerError(result.error ?? "Something went wrong");
+      setPending(false);
+      return;
+    }
+    router.push(`/projects/${result.data.id}`);
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button variant="outline" size="sm" onClick={handleCreate} disabled={pending}>
+        {pending ? "Creating…" : "Create project"}
+      </Button>
+      {serverError && <p className="text-xs text-destructive">{serverError}</p>}
+    </div>
+  );
+}
+
 export function EstimateBuilderClient({
   estimate,
   assemblies,
@@ -788,6 +836,7 @@ export function EstimateBuilderClient({
         </div>
         <div className="flex items-center gap-4">
           <ProposalLinks estimateId={estimate.id} />
+          <ProjectLinkControl estimateId={estimate.id} status={estimate.status} projectId={estimate.projectId} />
           <StatusControls estimateId={estimate.id} status={estimate.status} />
         </div>
       </div>

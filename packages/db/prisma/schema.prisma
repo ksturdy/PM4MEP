@@ -36,6 +36,21 @@ enum EstimateLineItemSourceType {
   Manual
 }
 
+enum ProjectStatus {
+  Planning
+  Active
+  OnHold
+  Complete
+  Cancelled
+}
+
+enum ChangeOrderStatus {
+  Draft
+  Pending
+  Approved
+  Rejected
+}
+
 enum AssemblyComponentType {
   PriceListItem
   LaborRate
@@ -92,15 +107,15 @@ model Organization {
   // signup (see AuthService.register) and is only ever advanced by the
   // billing webhook handler — never written to directly by application
   // code — so it always reflects Stripe's own view of the subscription.
-  plan                 Plan                @default(Essentials)
-  billingCycle         BillingCycle?       @map("billing_cycle")
-  subscriptionStatus   SubscriptionStatus  @default(Incomplete) @map("subscription_status")
-  stripeCustomerId     String?             @unique @map("stripe_customer_id")
-  stripeSubscriptionId String?             @unique @map("stripe_subscription_id")
-  stripePriceId        String?             @map("stripe_price_id")
-  currentPeriodEnd     DateTime?           @map("current_period_end")
-  cancelAtPeriodEnd    Boolean             @default(false) @map("cancel_at_period_end")
-  trialEndsAt          DateTime?           @map("trial_ends_at")
+  plan                 Plan               @default(Essentials)
+  billingCycle         BillingCycle?      @map("billing_cycle")
+  subscriptionStatus   SubscriptionStatus @default(Incomplete) @map("subscription_status")
+  stripeCustomerId     String?            @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?            @unique @map("stripe_subscription_id")
+  stripePriceId        String?            @map("stripe_price_id")
+  currentPeriodEnd     DateTime?          @map("current_period_end")
+  cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
+  trialEndsAt          DateTime?          @map("trial_ends_at")
 
   memberships    Membership[]
   invitations    Invitation[]
@@ -110,6 +125,7 @@ model Organization {
   laborRates     LaborRate[]
   assemblies     Assembly[]
   estimates      Estimate[]
+  projects       Project[]
   orgSequences   OrgSequence[]
 
   @@map("organizations")
@@ -139,9 +155,13 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  memberships      Membership[]
-  createdEstimates Estimate[]
-  passwordResets   PasswordReset[]
+  memberships         Membership[]
+  createdEstimates    Estimate[]
+  passwordResets      PasswordReset[]
+  createdProjects     Project[]          @relation("ProjectCreatedBy")
+  managedProjects     Project[]          @relation("ProjectManager")
+  projectCostEntries  ProjectCostEntry[]
+  createdChangeOrders ChangeOrder[]
 
   @@map("users")
 }
@@ -227,10 +247,12 @@ model CostCode {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  org               Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  priceListItems    PriceListItem[]
-  laborRates        LaborRate[]
-  estimateLineItems EstimateLineItem[]
+  org                Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  priceListItems     PriceListItem[]
+  laborRates         LaborRate[]
+  estimateLineItems  EstimateLineItem[]
+  projectBudgetLines ProjectBudgetLine[]
+  projectCostEntries ProjectCostEntry[]
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -259,6 +281,7 @@ model Customer {
 
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   estimates Estimate[]
+  projects  Project[]
 
   @@index([orgId])
   @@index([orgId, name])
@@ -432,11 +455,16 @@ model Estimate {
   createdBy User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
   sections EstimateSection[]
+  // At most one Project per estimate — see Project.estimateId. Won -> Draft
+  // is blocked in EstimatingService.transitionStatus() once this is set, so
+  // a converted estimate can't be reverted out from under its Project.
+  project  Project?
 
   @@unique([orgId, number])
   @@index([orgId])
   @@index([orgId, customerId])
   @@index([orgId, status])
+  @@index([orgId, bidDueDate])
   @@map("estimates")
 }
 
@@ -493,7 +521,179 @@ model EstimateLineItem {
   laborRate     LaborRate?      @relation(fields: [laborRateId], references: [id], onDelete: SetNull)
   costCode      CostCode?       @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
 
+  // Populated on rows copied into a Project's budget at Won-estimate
+  // conversion time (see ProjectBudgetLine.sourceEstimateLineItemId) — a
+  // given line item is never copied more than once per project, but nothing
+  // stops the same source line item being referenced by budget lines across
+  // more than one project over time (e.g. a rejected then re-created
+  // conversion), hence the array rather than a 1:1 back-relation.
+  projectBudgetLines ProjectBudgetLine[]
+
   @@index([orgId])
   @@index([sectionId])
   @@map("estimate_line_items")
+}
+
+// A Project tracks execution of already-sold work: budget vs. actual cost,
+// schedule milestones, and change orders. Created either by converting a
+// Won Estimate (estimateId set, budget lines snapshotted 1:1 from the
+// estimate's line items — see ProjectBudgetLine) or from scratch
+// (estimateId null, budget lines entered manually) — both paths produce the
+// same shape of Project. totalBudget/totalActualCost are always
+// server-computed and overwritten on save, never client-trusted, same rule
+// as Estimate.calculatedSellPrice — see recalculate() in
+// apps/api/src/projects/projects.service.ts.
+model Project {
+  id         String        @id @default(uuid())
+  orgId      String        @map("org_id")
+  customerId String        @map("customer_id")
+  estimateId String?       @unique @map("estimate_id")
+  number     String
+  name       String
+  status     ProjectStatus @default(Planning)
+
+  startDate            DateTime? @map("start_date")
+  targetCompletionDate DateTime? @map("target_completion_date")
+  actualCompletionDate DateTime? @map("actual_completion_date")
+
+  projectManagerId String? @map("project_manager_id")
+  scopeDescription String? @map("scope_description")
+
+  totalBudget     Decimal @map("total_budget") @db.Decimal(12, 2)
+  totalActualCost Decimal @map("total_actual_cost") @db.Decimal(12, 2)
+
+  createdById String @map("created_by_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  estimate       Estimate?    @relation(fields: [estimateId], references: [id], onDelete: Restrict)
+  createdBy      User         @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  projectManager User?        @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: SetNull)
+
+  budgetLines  ProjectBudgetLine[]
+  costEntries  ProjectCostEntry[]
+  milestones   ProjectMilestone[]
+  changeOrders ChangeOrder[]
+
+  @@unique([orgId, number])
+  @@index([orgId])
+  @@index([orgId, customerId])
+  @@index([orgId, status])
+  @@index([orgId, projectManagerId])
+  @@map("projects")
+}
+
+// Budget lines are always a snapshot, never a live join — either copied 1:1
+// from a Won estimate's line items at conversion time
+// (sourceEstimateLineItemId set) or entered manually for a from-scratch
+// project (null). Mirrors why EstimateLineItem itself snapshots assembly
+// pricing rather than joining live: nothing blocks editing a Won estimate's
+// line items afterward, so the snapshot is what protects a live project's
+// budget from drifting under it. No qty/unitCost breakdown here (unlike
+// EstimateLineItem) — a budget line is a target dollar amount, not a build-up.
+model ProjectBudgetLine {
+  id                       String  @id @default(uuid())
+  orgId                    String  @map("org_id")
+  projectId                String  @map("project_id")
+  costCodeId               String? @map("cost_code_id")
+  sourceEstimateLineItemId String? @map("source_estimate_line_item_id")
+
+  description  String
+  costType     CostType @map("cost_type")
+  budgetAmount Decimal  @map("budget_amount") @db.Decimal(12, 2)
+  sortOrder    Int      @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project                Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costCode               CostCode?         @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  sourceEstimateLineItem EstimateLineItem? @relation(fields: [sourceEstimateLineItemId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([projectId])
+  @@map("project_budget_lines")
+}
+
+// The actual-cost ledger — what field crews and accounting log against a
+// project's budget, one entry per cost incurred. enteredById (not
+// createdById, deliberately) is the person who logged the cost, distinct
+// from incurredOn, the date the cost was actually incurred.
+model ProjectCostEntry {
+  id         String  @id @default(uuid())
+  orgId      String  @map("org_id")
+  projectId  String  @map("project_id")
+  costCodeId String? @map("cost_code_id")
+
+  description  String
+  costType     CostType @map("cost_type")
+  quantity     Decimal  @db.Decimal(12, 4)
+  unitCost     Decimal  @map("unit_cost") @db.Decimal(12, 4)
+  extendedCost Decimal  @map("extended_cost") @db.Decimal(12, 2)
+  incurredOn   DateTime @map("incurred_on")
+
+  enteredById String @map("entered_by_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costCode  CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  enteredBy User      @relation(fields: [enteredById], references: [id], onDelete: Restrict)
+
+  @@index([orgId])
+  @@index([projectId])
+  @@map("project_cost_entries")
+}
+
+// Flat date markers, not a full Gantt/critical-path schedule — an
+// intentional Phase 1 scope cut, same kind of call as Customer's "no
+// separate Contact model" comment above.
+model ProjectMilestone {
+  id          String    @id @default(uuid())
+  orgId       String    @map("org_id")
+  projectId   String    @map("project_id")
+  name        String
+  dueDate     DateTime? @map("due_date")
+  completedAt DateTime? @map("completed_at")
+  sortOrder   Int       @map("sort_order")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([projectId])
+  @@index([orgId, dueDate])
+  @@map("project_milestones")
+}
+
+// amount is a signed budget delta, folded into Project.totalBudget only
+// once Approved (see recalculate() in projects.service.ts) — Draft/Pending/
+// Rejected change orders never affect the budget. scheduleImpactDays is
+// nullable since not every change order shifts the completion date.
+model ChangeOrder {
+  id                 String            @id @default(uuid())
+  orgId              String            @map("org_id")
+  projectId          String            @map("project_id")
+  title              String
+  description        String?
+  status             ChangeOrderStatus @default(Draft)
+  amount             Decimal           @db.Decimal(12, 2)
+  scheduleImpactDays Int?              @map("schedule_impact_days")
+  approvedAt         DateTime?         @map("approved_at")
+
+  createdById String @map("created_by_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([orgId])
+  @@index([projectId])
+  @@index([orgId, status])
+  @@map("change_orders")
 }

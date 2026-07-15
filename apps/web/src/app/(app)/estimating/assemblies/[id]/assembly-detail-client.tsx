@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatCurrency, formatCurrencyPrecise } from "@/lib/format";
 import { addAssemblyComponent, removeAssemblyComponent, updateAssembly } from "../actions";
 
 const COST_TYPE_LABELS: Record<string, string> = {
@@ -124,7 +125,7 @@ function AddComponentDialog({
                 <SelectContent>
                   {priceListItems.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
-                      {item.description} (${item.unitCost.toFixed(2)}/{item.unit})
+                      {item.description} ({formatCurrencyPrecise(item.unitCost)}/{item.unit})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -145,7 +146,7 @@ function AddComponentDialog({
                 <SelectContent>
                   {laborRates.map((rate) => (
                     <SelectItem key={rate.id} value={rate.id}>
-                      {rate.classification} (${rate.burdenedHourlyRate.toFixed(2)}/hr)
+                      {rate.classification} ({formatCurrencyPrecise(rate.burdenedHourlyRate)}/hr)
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -280,15 +281,15 @@ function ExplodePreview({ assembly }: { assembly: AssemblyWithComponents }) {
                     <TableCell>
                       {line.quantity.toString()} {line.unit}
                     </TableCell>
-                    <TableCell>${line.unitCost.toFixed(2)}</TableCell>
-                    <TableCell>${line.extendedCost.toFixed(2)}</TableCell>
+                    <TableCell>{formatCurrencyPrecise(line.unitCost.toNumber())}</TableCell>
+                    <TableCell>{formatCurrency(line.extendedCost.toNumber())}</TableCell>
                   </TableRow>
                 ))}
                 <TableRow>
                   <TableCell colSpan={4} className="text-right font-medium">
                     Total
                   </TableCell>
-                  <TableCell className="font-medium">${preview.total.toFixed(2)}</TableCell>
+                  <TableCell className="font-medium">{formatCurrency(preview.total.toNumber())}</TableCell>
                 </TableRow>
               </TableBody>
             </Table>
@@ -363,7 +364,7 @@ export function AssemblyDetailClient({
                     <TableCell>
                       {component.quantityPerUnit} {component.unit}
                     </TableCell>
-                    <TableCell>${component.unitCost.toFixed(2)}</TableCell>
+                    <TableCell>{formatCurrencyPrecise(component.unitCost)}</TableCell>
                     <TableCell>
                       <RemoveComponentButton assemblyId={assembly.id} componentId={component.id} />
                     </TableCell>

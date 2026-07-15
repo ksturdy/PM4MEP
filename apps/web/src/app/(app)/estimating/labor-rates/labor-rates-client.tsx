@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatCurrencyPrecise } from "@/lib/format";
 import { createLaborRate, updateLaborRate } from "./actions";
 
 function LaborRateForm({
@@ -222,7 +223,7 @@ export function LaborRatesClient({
               <TableRow key={laborRate.id}>
                 <TableCell className="font-medium">{laborRate.classification}</TableCell>
                 <TableCell>{costCodeById.get(laborRate.costCodeId)?.code ?? "—"}</TableCell>
-                <TableCell>${laborRate.burdenedHourlyRate.toFixed(2)}/hr</TableCell>
+                <TableCell>{formatCurrencyPrecise(laborRate.burdenedHourlyRate)}/hr</TableCell>
                 <TableCell>
                   <ActiveToggle laborRate={laborRate} />
                 </TableCell>

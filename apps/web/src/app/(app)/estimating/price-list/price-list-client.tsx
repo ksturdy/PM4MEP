@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatCurrencyPrecise } from "@/lib/format";
 import { createPriceListItem, updatePriceListItem } from "./actions";
 
 function PriceListItemForm({
@@ -235,7 +236,7 @@ export function PriceListClient({ items, costCodes }: { items: PriceListItem[]; 
                 <TableCell className="font-medium">{item.description}</TableCell>
                 <TableCell>{costCodeById.get(item.costCodeId)?.code ?? "—"}</TableCell>
                 <TableCell>{item.unit}</TableCell>
-                <TableCell>${item.unitCost.toFixed(2)}</TableCell>
+                <TableCell>{formatCurrencyPrecise(item.unitCost)}</TableCell>
                 <TableCell>
                   <ActiveToggle item={item} />
                 </TableCell>

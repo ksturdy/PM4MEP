@@ -28,6 +28,11 @@ import { EstimatingService } from "./estimating.service";
 export class EstimatingController {
   constructor(private readonly estimating: EstimatingService) {}
 
+  @Get("pipeline-summary")
+  pipelineSummary(@CurrentAuth() auth: AuthContext) {
+    return this.estimating.pipelineSummary(auth.orgId);
+  }
+
   @Get()
   list(@CurrentAuth() auth: AuthContext) {
     return this.estimating.list(auth.orgId);

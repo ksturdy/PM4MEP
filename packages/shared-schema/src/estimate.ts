@@ -209,6 +209,10 @@ export const EstimateWithDetailsSchema = EstimateSchema.extend({
   createdByName: z.string(),
   sections: EstimateSectionWithLineItemsSchema.array(),
   rollup: EstimateRollupSchema,
+  // Set once a Won estimate has been converted into a Project (see
+  // POST /projects/from-estimate/:estimateId) — null otherwise. Detail-only,
+  // like rollup, not on the plain EstimateSchema/list item.
+  projectId: z.string().uuid().nullable(),
 });
 
 export type EstimateWithDetails = z.infer<typeof EstimateWithDetailsSchema>;
@@ -225,3 +229,28 @@ export const EstimateListItemSchema = z.object({
 });
 
 export type EstimateListItem = z.infer<typeof EstimateListItemSchema>;
+
+export const EstimatePipelineSummarySchema = z.object({
+  statusCounts: z.object({
+    Draft: z.number(),
+    Submitted: z.number(),
+    Won: z.number(),
+    Lost: z.number(),
+  }),
+  openPipelineValue: z.coerce.number(),
+  // null when there are no decided (Won/Lost) estimates yet to compute a
+  // rate from — distinct from 0%, which means decided estimates exist and
+  // none were won.
+  winRate: z.coerce.number().nullable(),
+  upcomingBidDueDates: z
+    .object({
+      id: z.string().uuid(),
+      number: z.string(),
+      name: z.string(),
+      customerName: z.string(),
+      bidDueDate: z.coerce.date().nullable(),
+    })
+    .array(),
+});
+
+export type EstimatePipelineSummary = z.infer<typeof EstimatePipelineSummarySchema>;

@@ -18,7 +18,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Estimating", href: "/estimating", icon: Calculator },
-  { label: "Projects", href: "/projects", icon: HardHat, comingSoon: true },
+  { label: "Projects", href: "/projects", icon: HardHat },
   { label: "Customers", href: "/customers", icon: Users },
   { label: "Cost Codes", href: "/cost-codes", icon: Tags },
   { label: "Settings", href: "/settings", icon: Settings, roles: ["Owner", "Admin"] },
