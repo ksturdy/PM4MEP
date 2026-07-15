@@ -100,6 +100,17 @@ export const EstimateUpdateSchema = z.object({
 
 export type EstimateUpdate = z.infer<typeof EstimateUpdateSchema>;
 
+// Proposal-facing text fields, edited together from one "Proposal details"
+// panel in the builder UI — mirrors the markupConfigFields split above.
+export const EstimateScopeDetailsUpdateSchema = EstimateUpdateSchema.pick({
+  scopeDescription: true,
+  inclusions: true,
+  exclusions: true,
+  termsAndConditions: true,
+});
+
+export type EstimateScopeDetailsUpdate = z.infer<typeof EstimateScopeDetailsUpdateSchema>;
+
 export const EstimateStatusTransitionSchema = z.object({
   status: EstimateStatusSchema,
 });

@@ -2,7 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException, UnauthorizedE
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
-import { STANDARD_COST_CODES } from "@pm4mep/db";
+import { Prisma, STANDARD_COST_CODES } from "@pm4mep/db";
 import type { LoginInput, RegisterInput } from "@pm4mep/shared-schema";
 import { PrismaService } from "../prisma/prisma.service";
 import { EmailService } from "../email/email.service";
@@ -92,10 +92,20 @@ export class AuthService {
   }
 
   async me(auth: AuthContext) {
+    // The JWT itself can still be validly signed and unexpired after the
+    // user/org it names has been deleted (e.g. a dev DB reset) — treat that
+    // as an expired session (401) rather than letting findUniqueOrThrow's
+    // P2025 bubble up as an unhandled 500, so callers like (app)/layout.tsx
+    // hit their existing res.status === 401 -> redirect("/login") path.
     const [user, org] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({ where: { id: auth.userId } }),
       this.prisma.organization.findUniqueOrThrow({ where: { id: auth.orgId } }),
-    ]);
+    ]).catch((err: unknown) => {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+        throw new UnauthorizedException("Session no longer valid");
+      }
+      throw err;
+    });
     return {
       // (app)/layout.tsx's subscription gate only enforces when billing is
       // actually operational — without a Stripe key, every org (including

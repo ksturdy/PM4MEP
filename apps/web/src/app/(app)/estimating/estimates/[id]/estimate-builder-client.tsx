@@ -11,6 +11,7 @@ import {
   EstimateLineItemFromAssemblyCreateSchema,
   EstimateLineItemManualCreateSchema,
   EstimateLineItemUpdateSchema,
+  EstimateScopeDetailsUpdateSchema,
   EstimateSectionCreateSchema,
   type Assembly,
   type CostCode,
@@ -18,6 +19,7 @@ import {
   type EstimateLineItemFromAssemblyCreate,
   type EstimateLineItemManualCreate,
   type EstimateLineItemUpdate,
+  type EstimateScopeDetailsUpdate,
   type EstimateSectionCreate,
   type EstimateStatus,
   type EstimateWithDetails,
@@ -38,6 +40,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatCurrencyPrecise } from "@/lib/format";
 import {
   addFromAssembly,
@@ -89,6 +92,13 @@ interface MarkupFormValues {
   contingencyPct: number;
   taxPct: number;
 }
+
+const SCOPE_FIELDS: Array<{ key: keyof EstimateScopeDetailsUpdate; label: string; placeholder: string }> = [
+  { key: "scopeDescription", label: "Scope of work", placeholder: "Describe the work to be performed…" },
+  { key: "inclusions", label: "Inclusions", placeholder: "What's included in this price…" },
+  { key: "exclusions", label: "Exclusions", placeholder: "What's excluded from this price…" },
+  { key: "termsAndConditions", label: "Terms & conditions", placeholder: "Payment terms, warranty, etc…" },
+];
 
 function StatusControls({ estimateId, status }: { estimateId: string; status: EstimateStatus }) {
   const router = useRouter();
@@ -169,6 +179,58 @@ function MarkupConfigCard({ estimate }: { estimate: EstimateWithDetails }) {
           <div>
             <Button type="submit" disabled={isSubmitting || !isDirty}>
               {isSubmitting ? "Saving…" : "Save markup config"}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScopeDetailsCard({ estimate }: { estimate: EstimateWithDetails }) {
+  const router = useRouter();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { isSubmitting, isDirty },
+  } = useForm<EstimateScopeDetailsUpdate>({
+    resolver: zodResolver(EstimateScopeDetailsUpdateSchema),
+    defaultValues: {
+      scopeDescription: estimate.scopeDescription ?? "",
+      inclusions: estimate.inclusions ?? "",
+      exclusions: estimate.exclusions ?? "",
+      termsAndConditions: estimate.termsAndConditions ?? "",
+    },
+  });
+
+  async function submit(values: EstimateScopeDetailsUpdate) {
+    setServerError(null);
+    const result = await updateEstimate(estimate.id, values);
+    if (!result.ok) {
+      setServerError(result.error ?? "Something went wrong");
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Proposal details</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4">
+          {SCOPE_FIELDS.map((field) => (
+            <div key={field.key} className="flex flex-col gap-2">
+              <Label htmlFor={field.key}>{field.label}</Label>
+              <Textarea id={field.key} rows={4} placeholder={field.placeholder} {...register(field.key)} />
+            </div>
+          ))}
+          {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+          <div>
+            <Button type="submit" disabled={isSubmitting || !isDirty}>
+              {isSubmitting ? "Saving…" : "Save proposal details"}
             </Button>
           </div>
         </form>
@@ -843,6 +905,7 @@ export function EstimateBuilderClient({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="flex flex-col gap-6 lg:col-span-2">
+          <ScopeDetailsCard estimate={estimate} />
           <div className="flex justify-end">
             <AddSectionDialog estimateId={estimate.id} />
           </div>
