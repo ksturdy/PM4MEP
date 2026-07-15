@@ -20,7 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { createCostCode, updateCostCode } from "./actions";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { createCostCode, deleteCostCode, updateCostCode } from "./actions";
 
 const COST_TYPE_LABELS: Record<string, string> = {
   labor: "Labor",
@@ -158,6 +159,35 @@ function EditCostCodeDialog({ costCode }: { costCode: CostCode }) {
   );
 }
 
+function DeleteCostCodeButton({ costCode }: { costCode: CostCode }) {
+  const router = useRouter();
+  const confirm = useConfirm();
+  const [pending, setPending] = useState(false);
+
+  async function handleClick() {
+    const confirmed = await confirm({
+      title: `Delete cost code ${costCode.code}?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!confirmed) return;
+    setPending(true);
+    const result = await deleteCostCode(costCode.id);
+    setPending(false);
+    if (!result.ok) {
+      window.alert(result.error);
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <Button variant="ghost" size="sm" disabled={pending} onClick={handleClick}>
+      Delete
+    </Button>
+  );
+}
+
 function ActiveToggle({ costCode }: { costCode: CostCode }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -210,7 +240,10 @@ export function CostCodesClient({ costCodes }: { costCodes: CostCode[] }) {
                   <ActiveToggle costCode={costCode} />
                 </TableCell>
                 <TableCell>
-                  <EditCostCodeDialog costCode={costCode} />
+                  <div className="flex items-center gap-1">
+                    <EditCostCodeDialog costCode={costCode} />
+                    <DeleteCostCodeButton costCode={costCode} />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

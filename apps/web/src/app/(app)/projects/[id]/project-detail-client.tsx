@@ -5,12 +5,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { PROJECT_ALLOWED_TRANSITIONS } from "@pm4mep/domain";
+import { Pencil } from "lucide-react";
 import {
   ChangeOrderCreateSchema,
   CostTypeSchema,
   ProjectBudgetLineManualCreateSchema,
   ProjectCostEntryCreateSchema,
   ProjectMilestoneCreateSchema,
+  ProjectUpdateSchema,
   type ChangeOrder,
   type ChangeOrderCreate,
   type ChangeOrderStatus,
@@ -50,6 +52,7 @@ import {
   transitionChangeOrderStatus,
   transitionProjectStatus,
   updateMilestone,
+  updateProject,
 } from "../actions";
 
 const COST_TYPE_LABELS: Record<string, string> = {
@@ -748,6 +751,68 @@ function ChangeOrdersTab({ project }: { project: ProjectWithDetails }) {
   );
 }
 
+function EditProjectNameDialog({ projectId, name }: { projectId: string; name: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<{ name: string }>({
+    resolver: zodResolver(ProjectUpdateSchema.pick({ name: true }).required()),
+    defaultValues: { name },
+  });
+
+  async function submit(values: { name: string }) {
+    setServerError(null);
+    const result = await updateProject(projectId, values);
+    if (!result.ok) {
+      setServerError(result.error ?? "Something went wrong");
+      return;
+    }
+    setOpen(false);
+    router.refresh();
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) reset({ name });
+      }}
+    >
+      <DialogTrigger
+        render={
+          <Button variant="ghost" size="icon" aria-label="Edit project name">
+            <Pencil className="size-4" />
+          </Button>
+        }
+      />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit project name</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="project-name">Project name</Label>
+            <Input id="project-name" {...register("name")} />
+            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+          </div>
+          {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+          <DialogFooter>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Saving…" : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ProjectDetailClient({
   project,
   costCodes,
@@ -759,9 +824,12 @@ export function ProjectDetailClient({
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {project.number} — {project.name}
-          </h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {project.number} — {project.name}
+            </h1>
+            <EditProjectNameDialog projectId={project.id} name={project.name} />
+          </div>
           <p className="text-muted-foreground">
             {project.customerName}
             {project.projectManagerName ? ` · PM: ${project.projectManagerName}` : ""}

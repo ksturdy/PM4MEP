@@ -32,3 +32,13 @@ export async function updateCostCode(id: string, input: CostCodeUpdate): Promise
   revalidatePath("/cost-codes");
   return { ok: true, data: undefined };
 }
+
+export async function deleteCostCode(id: string): Promise<ActionResult> {
+  const res = await apiFetch(`/cost-codes/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    return { ok: false, error: body?.message ?? "Failed to delete cost code" };
+  }
+  revalidatePath("/cost-codes");
+  return { ok: true, data: undefined };
+}

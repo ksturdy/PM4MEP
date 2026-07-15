@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { inviteMember, removeMember, resetMemberPassword, revokeInvitation, updateMemberRole } from "./actions";
 
 function formatLastLogin(lastLoginAt: Date | null): string {
@@ -153,10 +154,15 @@ function MemberRoleCell({ member, disabled }: { member: TeamMember; disabled: bo
 
 function RemoveMemberButton({ member }: { member: TeamMember }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [pending, setPending] = useState(false);
 
   async function handleClick() {
-    if (!window.confirm(`Remove ${member.user.name} from your team?`)) return;
+    const confirmed = await confirm({
+      title: `Remove ${member.user.name} from your team?`,
+      confirmLabel: "Remove",
+    });
+    if (!confirmed) return;
     setPending(true);
     const result = await removeMember(member.id);
     setPending(false);
@@ -175,11 +181,17 @@ function RemoveMemberButton({ member }: { member: TeamMember }) {
 }
 
 function ResetPasswordButton({ member }: { member: TeamMember }) {
+  const confirm = useConfirm();
   const [pending, setPending] = useState(false);
   const [sent, setSent] = useState(false);
 
   async function handleClick() {
-    if (!window.confirm(`Send a password reset email to ${member.user.email}?`)) return;
+    const confirmed = await confirm({
+      title: `Send a password reset email to ${member.user.email}?`,
+      confirmLabel: "Send email",
+      destructive: false,
+    });
+    if (!confirmed) return;
     setPending(true);
     const result = await resetMemberPassword(member.id);
     setPending(false);
@@ -203,10 +215,15 @@ function ResetPasswordButton({ member }: { member: TeamMember }) {
 
 function RevokeInvitationButton({ invitation }: { invitation: Invitation }) {
   const router = useRouter();
+  const confirm = useConfirm();
   const [pending, setPending] = useState(false);
 
   async function handleClick() {
-    if (!window.confirm(`Revoke the invite sent to ${invitation.email}?`)) return;
+    const confirmed = await confirm({
+      title: `Revoke the invite sent to ${invitation.email}?`,
+      confirmLabel: "Revoke",
+    });
+    if (!confirmed) return;
     setPending(true);
     await revokeInvitation(invitation.id);
     setPending(false);

@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { ALLOWED_TRANSITIONS } from "@pm4mep/domain";
+import { Pencil } from "lucide-react";
 import {
   CostTypeSchema,
   EstimateLineItemFromAssemblyCreateSchema,
@@ -13,6 +14,7 @@ import {
   EstimateLineItemUpdateSchema,
   EstimateScopeDetailsUpdateSchema,
   EstimateSectionCreateSchema,
+  EstimateUpdateSchema,
   type Assembly,
   type CostCode,
   type EstimateLineItem,
@@ -878,6 +880,68 @@ function ProjectLinkControl({ estimateId, status, projectId }: { estimateId: str
   );
 }
 
+function EditEstimateNameDialog({ estimateId, name }: { estimateId: string; name: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<{ name: string }>({
+    resolver: zodResolver(EstimateUpdateSchema.pick({ name: true }).required()),
+    defaultValues: { name },
+  });
+
+  async function submit(values: { name: string }) {
+    setServerError(null);
+    const result = await updateEstimate(estimateId, values);
+    if (!result.ok) {
+      setServerError(result.error ?? "Something went wrong");
+      return;
+    }
+    setOpen(false);
+    router.refresh();
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) reset({ name });
+      }}
+    >
+      <DialogTrigger
+        render={
+          <Button variant="ghost" size="icon" aria-label="Edit estimate name">
+            <Pencil className="size-4" />
+          </Button>
+        }
+      />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit estimate name</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="estimate-name">Estimate name</Label>
+            <Input id="estimate-name" {...register("name")} />
+            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+          </div>
+          {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+          <DialogFooter>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Saving…" : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function EstimateBuilderClient({
   estimate,
   assemblies,
@@ -891,9 +955,12 @@ export function EstimateBuilderClient({
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {estimate.number} — {estimate.name}
-          </h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {estimate.number} — {estimate.name}
+            </h1>
+            <EditEstimateNameDialog estimateId={estimate.id} name={estimate.name} />
+          </div>
           <p className="text-muted-foreground">{estimate.customerName}</p>
         </div>
         <div className="flex items-center gap-4">

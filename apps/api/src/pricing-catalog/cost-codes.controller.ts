@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { CostCodeCreateSchema, CostCodeUpdateSchema } from "@pm4mep/shared-schema";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentAuth } from "../auth/current-auth.decorator";
@@ -31,5 +31,10 @@ export class CostCodesController {
       throw new BadRequestException(parsed.error.flatten());
     }
     return this.costCodes.update(auth.orgId, id, parsed.data);
+  }
+
+  @Delete(":id")
+  remove(@CurrentAuth() auth: AuthContext, @Param("id") id: string) {
+    return this.costCodes.remove(auth.orgId, id);
   }
 }
