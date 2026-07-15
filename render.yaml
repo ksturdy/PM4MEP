@@ -75,6 +75,8 @@ services:
         sync: false
       - key: R2_PUBLIC_BASE_URL
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
 
   - type: web
     name: pm4mep-web

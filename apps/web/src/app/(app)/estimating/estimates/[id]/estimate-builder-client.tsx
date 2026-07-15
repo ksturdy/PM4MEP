@@ -10,6 +10,7 @@ import { Pencil } from "lucide-react";
 import {
   CostTypeSchema,
   EstimateLineItemFromAssemblyCreateSchema,
+  EstimateLineItemFromCatalogCreateSchema,
   EstimateLineItemManualCreateSchema,
   EstimateLineItemUpdateSchema,
   EstimateScopeDetailsUpdateSchema,
@@ -19,12 +20,14 @@ import {
   type CostCode,
   type EstimateLineItem,
   type EstimateLineItemFromAssemblyCreate,
+  type EstimateLineItemFromCatalogCreate,
   type EstimateLineItemManualCreate,
   type EstimateLineItemUpdate,
   type EstimateScopeDetailsUpdate,
   type EstimateSectionCreate,
   type EstimateStatus,
   type EstimateWithDetails,
+  type PriceListItem,
 } from "@pm4mep/shared-schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatCurrencyPrecise } from "@/lib/format";
 import {
   addFromAssembly,
+  addFromCatalog,
   addManualLineItem,
   addSection,
   removeLineItem,
@@ -317,6 +321,119 @@ function FromAssemblyForm({
   );
 }
 
+function FromCatalogForm({
+  estimateId,
+  sectionId,
+  priceListItems,
+  onSuccess,
+}: {
+  estimateId: string;
+  sectionId: string;
+  priceListItems: PriceListItem[];
+  onSuccess: () => void;
+}) {
+  const router = useRouter();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<EstimateLineItemFromCatalogCreate>({
+    resolver: zodResolver(EstimateLineItemFromCatalogCreateSchema),
+    defaultValues: { priceListItemId: "", quantity: 1 },
+  });
+
+  const selectedId = watch("priceListItemId");
+  const selected = priceListItems.find((item) => item.id === selectedId);
+  const term = search.trim().toLowerCase();
+  const filtered = term
+    ? priceListItems.filter((item) =>
+        [item.description, item.manufacturer, item.modelNumber, item.sku]
+          .filter(Boolean)
+          .some((field) => field!.toLowerCase().includes(term)),
+      )
+    : priceListItems;
+
+  async function submit(values: EstimateLineItemFromCatalogCreate) {
+    setServerError(null);
+    const result = await addFromCatalog(estimateId, sectionId, values);
+    if (!result.ok) {
+      setServerError(result.error ?? "Something went wrong");
+      return;
+    }
+    onSuccess();
+    router.refresh();
+  }
+
+  if (priceListItems.length === 0) {
+    return <p className="text-sm text-muted-foreground">No catalog items yet — add some from the price list.</p>;
+  }
+
+  return (
+    <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <Label>Catalog item</Label>
+        <Input
+          placeholder="Search by description, manufacturer, model, or SKU…"
+          value={selected ? "" : search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setValue("priceListItemId", "");
+          }}
+        />
+        {selected ? (
+          <div className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+            <span>
+              {[selected.manufacturer, selected.modelNumber].filter(Boolean).join(" ") || selected.description}
+              {" — "}
+              {selected.description}
+            </span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setValue("priceListItemId", "")}>
+              Change
+            </Button>
+          </div>
+        ) : (
+          <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+            {filtered.slice(0, 20).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setValue("priceListItemId", item.id)}
+                className="flex flex-col rounded-md border border-transparent px-3 py-2 text-left text-sm hover:border-border hover:bg-accent"
+              >
+                <span className="font-medium">
+                  {[item.manufacturer, item.modelNumber].filter(Boolean).join(" ") || item.description}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {item.description} · {formatCurrencyPrecise(item.unitCost)}/{item.unit}
+                </span>
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <p className="px-3 py-2 text-sm text-muted-foreground">No matching catalog items.</p>
+            )}
+          </div>
+        )}
+        {errors.priceListItemId && <p className="text-sm text-destructive">Select a catalog item.</p>}
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="catalog-quantity">Quantity</Label>
+        <Input id="catalog-quantity" type="number" step="0.0001" {...register("quantity", { valueAsNumber: true })} />
+        {errors.quantity && <p className="text-sm text-destructive">{errors.quantity.message}</p>}
+      </div>
+      {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+      <DialogFooter>
+        <Button type="submit" disabled={isSubmitting || !selectedId}>
+          {isSubmitting ? "Adding…" : "Add from catalog"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
 function ManualLineItemForm({
   estimateId,
   sectionId,
@@ -431,11 +548,13 @@ function AddLineItemDialog({
   sectionId,
   assemblies,
   costCodes,
+  priceListItems,
 }: {
   estimateId: string;
   sectionId: string;
   assemblies: Assembly[];
   costCodes: CostCode[];
+  priceListItems: PriceListItem[];
 }) {
   const [open, setOpen] = useState(false);
 
@@ -449,6 +568,7 @@ function AddLineItemDialog({
         <Tabs defaultValue="assembly">
           <TabsList>
             <TabsTrigger value="assembly">From Assembly</TabsTrigger>
+            <TabsTrigger value="catalog">From Catalog</TabsTrigger>
             <TabsTrigger value="manual">Manual Entry</TabsTrigger>
           </TabsList>
           <TabsContent value="assembly">
@@ -456,6 +576,14 @@ function AddLineItemDialog({
               estimateId={estimateId}
               sectionId={sectionId}
               assemblies={assemblies}
+              onSuccess={() => setOpen(false)}
+            />
+          </TabsContent>
+          <TabsContent value="catalog">
+            <FromCatalogForm
+              estimateId={estimateId}
+              sectionId={sectionId}
+              priceListItems={priceListItems}
               onSuccess={() => setOpen(false)}
             />
           </TabsContent>
@@ -653,11 +781,13 @@ function SectionCard({
   section,
   assemblies,
   costCodes,
+  priceListItems,
 }: {
   estimate: EstimateWithDetails;
   section: EstimateWithDetails["sections"][number];
   assemblies: Assembly[];
   costCodes: CostCode[];
+  priceListItems: PriceListItem[];
 }) {
   return (
     <Card>
@@ -669,6 +799,7 @@ function SectionCard({
             sectionId={section.id}
             assemblies={assemblies}
             costCodes={costCodes}
+            priceListItems={priceListItems}
           />
           <RemoveButton onRemove={() => removeSection(estimate.id, section.id).then(() => undefined)} />
         </div>
@@ -946,10 +1077,12 @@ export function EstimateBuilderClient({
   estimate,
   assemblies,
   costCodes,
+  priceListItems,
 }: {
   estimate: EstimateWithDetails;
   assemblies: Assembly[];
   costCodes: CostCode[];
+  priceListItems: PriceListItem[];
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -990,6 +1123,7 @@ export function EstimateBuilderClient({
               section={section}
               assemblies={assemblies}
               costCodes={costCodes}
+              priceListItems={priceListItems}
             />
           ))}
           <MarkupConfigCard estimate={estimate} />

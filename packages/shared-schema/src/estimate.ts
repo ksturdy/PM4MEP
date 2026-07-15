@@ -4,7 +4,7 @@ import { CostTypeSchema } from "./cost-code.js";
 export const EstimateStatusSchema = z.enum(["Draft", "Submitted", "Won", "Lost"]);
 export type EstimateStatus = z.infer<typeof EstimateStatusSchema>;
 
-export const EstimateLineItemSourceTypeSchema = z.enum(["Assembly", "Manual"]);
+export const EstimateLineItemSourceTypeSchema = z.enum(["Assembly", "Manual", "Catalog"]);
 export type EstimateLineItemSourceType = z.infer<typeof EstimateLineItemSourceTypeSchema>;
 
 // Markup config fields, shared between Estimate's full read shape and the
@@ -172,6 +172,13 @@ export const EstimateLineItemFromAssemblyCreateSchema = z.object({
 });
 
 export type EstimateLineItemFromAssemblyCreate = z.infer<typeof EstimateLineItemFromAssemblyCreateSchema>;
+
+export const EstimateLineItemFromCatalogCreateSchema = z.object({
+  priceListItemId: z.string().uuid(),
+  quantity: z.coerce.number().positive(),
+});
+
+export type EstimateLineItemFromCatalogCreate = z.infer<typeof EstimateLineItemFromCatalogCreateSchema>;
 
 export const EstimateLineItemUpdateSchema = z.object({
   description: z.string().min(1).max(500).optional(),

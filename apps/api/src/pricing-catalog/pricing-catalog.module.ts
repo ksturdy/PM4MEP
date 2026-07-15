@@ -1,9 +1,11 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
+import { StorageModule } from "../storage/storage.module";
 import { CostCodesController } from "./cost-codes.controller";
 import { CostCodesService } from "./cost-codes.service";
 import { PriceListItemsController } from "./price-list-items.controller";
 import { PriceListItemsService } from "./price-list-items.service";
+import { CatalogWebSearchService } from "./catalog-web-search.service";
 import { LaborRatesController } from "./labor-rates.controller";
 import { LaborRatesService } from "./labor-rates.service";
 
@@ -13,8 +15,8 @@ import { LaborRatesService } from "./labor-rates.service";
 // module's provider graph, not reused from wherever it was originally
 // registered. Every future module using JwtAuthGuard needs this same import.
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, StorageModule],
   controllers: [CostCodesController, PriceListItemsController, LaborRatesController],
-  providers: [CostCodesService, PriceListItemsService, LaborRatesService],
+  providers: [CostCodesService, PriceListItemsService, LaborRatesService, CatalogWebSearchService],
 })
 export class PricingCatalogModule {}

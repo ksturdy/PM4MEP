@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "@pm4mep/db";
 import {
   Decimal,
@@ -14,6 +14,7 @@ import {
 import type {
   EstimateCreate,
   EstimateLineItemFromAssemblyCreate,
+  EstimateLineItemFromCatalogCreate,
   EstimateLineItemManualCreate,
   EstimateLineItemUpdate,
   EstimateSectionCreate,
@@ -249,6 +250,53 @@ export class EstimatingService {
           extendedCost: extendedCost.toNumber(),
           costType: input.costType,
           markupOverridePct: input.markupOverridePct ?? null,
+          sortOrder,
+        },
+      });
+
+      await recalculate(tx, estimateId);
+    });
+  }
+
+  // Snapshots live catalog pricing into a new EstimateLineItem, same
+  // freeze-at-insert-time rule as addFromAssembly. Uses findFirst with an
+  // explicit orgId filter rather than findUniqueOrThrow(id) — price_list_items
+  // has no RLS policy today, so this is the only tenant boundary in play;
+  // dropping it would let any authenticated user pull another org's catalog
+  // item (and its cost) into their own estimate by guessing/observing a UUID.
+  async addFromCatalog(
+    orgId: string,
+    estimateId: string,
+    sectionId: string,
+    input: EstimateLineItemFromCatalogCreate,
+  ) {
+    return this.prisma.withTenant(orgId, async (tx) => {
+      const priceListItem = await tx.priceListItem.findFirst({
+        where: { id: input.priceListItemId, orgId },
+        include: { costCode: true },
+      });
+      if (!priceListItem || !priceListItem.active) {
+        throw new NotFoundException("Catalog item not found");
+      }
+
+      const quantity = new Decimal(input.quantity);
+      const unitCost = new Decimal(priceListItem.unitCost);
+      const extendedCost = calculateLineItemExtendedCost(unitCost, quantity);
+      const sortOrder = await tx.estimateLineItem.count({ where: { sectionId } });
+
+      await tx.estimateLineItem.create({
+        data: {
+          orgId,
+          sectionId,
+          sourceType: "Catalog",
+          priceListItemId: priceListItem.id,
+          costCodeId: priceListItem.costCodeId,
+          description: priceListItem.description,
+          unit: priceListItem.unit,
+          unitCost: unitCost.toNumber(),
+          quantity: quantity.toNumber(),
+          extendedCost: extendedCost.toNumber(),
+          costType: priceListItem.costCode.costType,
           sortOrder,
         },
       });

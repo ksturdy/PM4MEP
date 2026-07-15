@@ -1,4 +1,4 @@
-import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Link, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { Prisma } from "@pm4mep/db";
 import type { Decimal, EstimateRollupResult } from "@pm4mep/domain";
 
@@ -39,6 +39,13 @@ const styles = StyleSheet.create({
   },
   textBlock: { fontSize: 9, lineHeight: 1.4, marginBottom: 8 },
   footer: { marginTop: 24, fontSize: 8, color: "#777" },
+  equipmentItem: { flexDirection: "row", marginBottom: 10 },
+  equipmentPhotos: { flexDirection: "row", marginRight: 10 },
+  equipmentPhoto: { width: 64, height: 64, objectFit: "contain", marginRight: 4, border: "0.5 solid #eee" },
+  equipmentInfo: { flex: 1 },
+  equipmentTitle: { fontSize: 10, fontWeight: 700, marginBottom: 2 },
+  equipmentDescription: { fontSize: 9, color: "#333", marginBottom: 2 },
+  equipmentSpecLink: { fontSize: 8, color: "#2563eb" },
 });
 
 function money(value: Decimal | number): string {
@@ -51,7 +58,7 @@ type EstimateForProposal = Prisma.EstimateGetPayload<{
   include: {
     customer: true;
     createdBy: true;
-    sections: { include: { lineItems: true } };
+    sections: { include: { lineItems: { include: { priceListItem: true } } } };
   };
 }>;
 
@@ -73,6 +80,20 @@ export function ProposalDocument({
   internal,
 }: ProposalDocumentProps) {
   const totalDirectCost = rollup.totalDirectCost.toNumber();
+
+  // Showcase equipment: catalog-sourced line items with at least one photo,
+  // deduped by priceListItemId (keeping first occurrence) so the same piece
+  // of equipment split across sections, or added twice, only appears once.
+  const seenPriceListItemIds = new Set<string>();
+  const equipmentItems = estimate.sections
+    .flatMap((section) => section.lineItems)
+    .filter((li) => {
+      if (!li.priceListItem || li.priceListItem.photoUrls.length === 0) return false;
+      if (seenPriceListItemIds.has(li.priceListItem.id)) return false;
+      seenPriceListItemIds.add(li.priceListItem.id);
+      return true;
+    })
+    .map((li) => li.priceListItem!);
 
   return (
     <Document title={`${estimate.number} — ${estimate.name}`}>
@@ -123,6 +144,32 @@ export function ProposalDocument({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Scope of Work</Text>
             <Text style={styles.textBlock}>{estimate.scopeDescription}</Text>
+          </View>
+        )}
+
+        {equipmentItems.length > 0 && (
+          <View style={styles.section} wrap={false}>
+            <Text style={styles.sectionTitle}>Equipment</Text>
+            {equipmentItems.map((item) => (
+              <View key={item.id} style={styles.equipmentItem}>
+                <View style={styles.equipmentPhotos}>
+                  {item.photoUrls.slice(0, 3).map((url) => (
+                    <Image key={url} src={url} style={styles.equipmentPhoto} />
+                  ))}
+                </View>
+                <View style={styles.equipmentInfo}>
+                  <Text style={styles.equipmentTitle}>
+                    {[item.manufacturer, item.modelNumber].filter(Boolean).join(" ") || item.description}
+                  </Text>
+                  <Text style={styles.equipmentDescription}>{item.description}</Text>
+                  {item.specSheetUrl && (
+                    <Link src={item.specSheetUrl} style={styles.equipmentSpecLink}>
+                      View spec sheet
+                    </Link>
+                  )}
+                </View>
+              </View>
+            ))}
           </View>
         )}
 

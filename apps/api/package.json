@@ -12,6 +12,7 @@
     "stripe:setup": "ts-node -T -r tsconfig-paths/register scripts/stripe-setup.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@aws-sdk/client-s3": "^3.1087.0",
     "@aws-sdk/s3-request-presigner": "^3.1087.0",
     "@fastify/helmet": "^13.0.0",

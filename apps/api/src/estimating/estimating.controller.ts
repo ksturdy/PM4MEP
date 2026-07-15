@@ -12,6 +12,7 @@ import {
 import {
   EstimateCreateSchema,
   EstimateLineItemFromAssemblyCreateSchema,
+  EstimateLineItemFromCatalogCreateSchema,
   EstimateLineItemManualCreateSchema,
   EstimateLineItemUpdateSchema,
   EstimateSectionCreateSchema,
@@ -127,6 +128,20 @@ export class EstimatingController {
       throw new BadRequestException(parsed.error.flatten());
     }
     return this.estimating.addFromAssembly(auth.orgId, id, sectionId, parsed.data);
+  }
+
+  @Post(":id/sections/:sectionId/line-items/from-catalog")
+  addFromCatalog(
+    @CurrentAuth() auth: AuthContext,
+    @Param("id") id: string,
+    @Param("sectionId") sectionId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = EstimateLineItemFromCatalogCreateSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.flatten());
+    }
+    return this.estimating.addFromCatalog(auth.orgId, id, sectionId, parsed.data);
   }
 
   @Patch(":id/line-items/:lineItemId")

@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import type {
   EstimateCreate,
   EstimateLineItemFromAssemblyCreate,
+  EstimateLineItemFromCatalogCreate,
   EstimateLineItemManualCreate,
   EstimateLineItemUpdate,
   EstimateSectionCreate,
@@ -108,6 +109,20 @@ export async function addFromAssembly(
   input: EstimateLineItemFromAssemblyCreate,
 ): Promise<ActionResult> {
   const result = await call(`/estimates/${estimateId}/sections/${sectionId}/line-items/from-assembly`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  revalidatePath(`/estimating/estimates/${estimateId}`);
+  return result;
+}
+
+export async function addFromCatalog(
+  estimateId: string,
+  sectionId: string,
+  input: EstimateLineItemFromCatalogCreate,
+): Promise<ActionResult> {
+  const result = await call(`/estimates/${estimateId}/sections/${sectionId}/line-items/from-catalog`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),

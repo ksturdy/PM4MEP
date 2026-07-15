@@ -34,6 +34,7 @@ enum EstimateStatus {
 enum EstimateLineItemSourceType {
   Assembly
   Manual
+  Catalog
 }
 
 enum ProjectStatus {
@@ -301,6 +302,8 @@ model PriceListItem {
   sku          String?
   unit         String
   unitCost     Decimal  @map("unit_cost") @db.Decimal(12, 4)
+  photoUrls    String[] @default([]) @map("photo_urls")
+  specSheetUrl String?  @map("spec_sheet_url")
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")

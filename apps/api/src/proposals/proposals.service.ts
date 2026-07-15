@@ -31,7 +31,9 @@ export class ProposalsService {
             createdBy: true,
             sections: {
               orderBy: { sortOrder: "asc" },
-              include: { lineItems: { orderBy: { sortOrder: "asc" } } },
+              include: {
+                lineItems: { orderBy: { sortOrder: "asc" }, include: { priceListItem: true } },
+              },
             },
           },
         }),
