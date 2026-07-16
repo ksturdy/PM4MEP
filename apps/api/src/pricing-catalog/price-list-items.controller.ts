@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import {
   CatalogWebSearchRequestSchema,
   PriceListItemCreateSchema,
@@ -42,6 +42,11 @@ export class PriceListItemsController {
       throw new BadRequestException(parsed.error.flatten());
     }
     return this.priceListItems.update(auth.orgId, id, parsed.data);
+  }
+
+  @Delete(":id")
+  remove(@CurrentAuth() auth: AuthContext, @Param("id") id: string) {
+    return this.priceListItems.remove(auth.orgId, id);
   }
 
   @Post("photo-upload-url")

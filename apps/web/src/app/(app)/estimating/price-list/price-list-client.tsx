@@ -7,9 +7,11 @@ import { useRouter } from "next/navigation";
 import {
   CATALOG_PHOTO_CONTENT_TYPES,
   CATALOG_SPEC_SHEET_CONTENT_TYPES,
+  EquipmentTypeSchema,
   PriceListItemCreateSchema,
   type CatalogWebSearchResult,
   type CostCode,
+  type EquipmentType,
   type PriceListItem,
   type PriceListItemCreate,
   type PriceListItemPhotoUploadUrlRequest,
@@ -18,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -31,10 +34,31 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { formatCurrencyPrecise } from "@/lib/format";
+
+const EQUIPMENT_TYPE_LABELS: Record<EquipmentType, string> = {
+  Furnace: "Furnace",
+  Boiler: "Boiler",
+  AirHandler: "Air Handler (AHU)",
+  RooftopUnit: "Rooftop Unit (RTU)",
+  CondensingUnit: "Condensing Unit",
+  HeatPump: "Heat Pump",
+  Chiller: "Chiller",
+  CoolingTower: "Cooling Tower",
+  FanCoilUnit: "Fan Coil Unit",
+  VavBox: "VAV Box",
+  Pump: "Pump",
+  WaterHeater: "Water Heater",
+  VentilationFan: "Ventilation Fan",
+  DuctworkAccessories: "Ductwork/Accessories",
+  ControlsThermostat: "Controls/Thermostat",
+  Other: "Other",
+};
 import {
   createPriceListItem,
   createPriceListItemFromWebResult,
+  deletePriceListItem,
   getPriceListItemPhotoUploadUrl,
   getPriceListItemSpecSheetUploadUrl,
   searchCatalogWeb,
@@ -254,36 +278,46 @@ function PriceListItemForm({
 
   return (
     <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <Label>Cost code</Label>
-        <Select
-          value={watch("costCodeId")}
-          onValueChange={(value) => value && setValue("costCodeId", value)}
-        >
-          <SelectTrigger>
-            {/* Base UI's SelectValue shows the raw value (here, a UUID)
-                unless given a children render-fn — unlike Radix, it
-                doesn't auto-derive a label from the matching SelectItem. */}
-            <SelectValue placeholder="Select a cost code">
-              {(value: string) => {
-                const cc = costCodes.find((c) => c.id === value);
-                return cc ? `${cc.code} — ${cc.description}` : "Select a cost code";
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {costCodes.map((cc) => (
-              <SelectItem key={cc.id} value={cc.id}>
-                {cc.code} — {cc.description}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-2">
+          <Label>Cost code</Label>
+          <Select
+            value={watch("costCodeId")}
+            onValueChange={(value) => value && setValue("costCodeId", value)}
+          >
+            <SelectTrigger>
+              {/* Base UI's SelectValue shows the raw value (here, a UUID)
+                  unless given a children render-fn — unlike Radix, it
+                  doesn't auto-derive a label from the matching SelectItem. */}
+              <SelectValue placeholder="Select a cost code">
+                {(value: string) => {
+                  const cc = costCodes.find((c) => c.id === value);
+                  return cc ? `${cc.code} — ${cc.description}` : "Select a cost code";
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {costCodes.map((cc) => (
+                <SelectItem key={cc.id} value={cc.id}>
+                  {cc.code} — {cc.description}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="itemNumber">Item #</Label>
+          <Input id="itemNumber" {...register("itemNumber")} />
+        </div>
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="description">Description</Label>
         <Input id="description" {...register("description")} />
         {errors.description && <p className="text-sm text-destructive">{errors.description.message}</p>}
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="longDescription">Long description (optional)</Label>
+        <Textarea id="longDescription" rows={3} {...register("longDescription")} />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-2">
@@ -294,6 +328,26 @@ function PriceListItemForm({
           <Label htmlFor="modelNumber">Model #</Label>
           <Input id="modelNumber" {...register("modelNumber")} />
         </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label>Type</Label>
+        <Select
+          value={watch("equipmentType") ?? ""}
+          onValueChange={(value) => setValue("equipmentType", (value || undefined) as EquipmentType | undefined)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="None">
+              {(value: string) => EQUIPMENT_TYPE_LABELS[value as EquipmentType] ?? "None"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {EquipmentTypeSchema.options.map((type) => (
+              <SelectItem key={type} value={type}>
+                {EQUIPMENT_TYPE_LABELS[type]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid grid-cols-3 gap-4">
         <div className="flex flex-col gap-2">
@@ -358,7 +412,10 @@ function EditPriceListItemDialog({ item, costCodes }: { item: PriceListItem; cos
           costCodes={costCodes}
           defaultValues={{
             costCodeId: item.costCodeId,
+            itemNumber: item.itemNumber ?? undefined,
             description: item.description,
+            longDescription: item.longDescription ?? undefined,
+            equipmentType: item.equipmentType ?? undefined,
             manufacturer: item.manufacturer ?? undefined,
             modelNumber: item.modelNumber ?? undefined,
             sku: item.sku ?? undefined,
@@ -469,10 +526,10 @@ function WebResultsBatchForm({
                 <img
                   src={result.imageUrl}
                   alt=""
-                  className="h-16 w-16 shrink-0 rounded border border-border object-contain p-1"
+                  className="h-20 w-20 shrink-0 rounded border border-border bg-white object-contain p-1"
                 />
               ) : (
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[10px] leading-tight text-muted-foreground">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[10px] leading-tight text-muted-foreground">
                   No photo found
                 </div>
               )}
@@ -571,7 +628,7 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
       }}
     >
       <DialogTrigger render={<Button variant="outline">Search the web</Button>} />
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>{reviewing ? "Add to catalog" : "Search the web for equipment"}</DialogTitle>
         </DialogHeader>
@@ -598,10 +655,7 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
               </Button>
             </div>
             {searching && (
-              <p className="text-xs text-muted-foreground">
-                This can take up to a minute or two — Claude is searching the web and reading product
-                pages to find real photos and spec sheets.
-              </p>
+              <p className="text-xs text-muted-foreground">This can take a few seconds…</p>
             )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             {results && results.length === 0 && (
@@ -609,45 +663,47 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
             )}
             {results && results.length > 0 && (
               <>
-                <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
+                <div className="grid max-h-[32rem] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
                   {results.map((result, i) => (
                     <Card
                       key={i}
                       className={`cursor-pointer ${selected.has(i) ? "ring-2 ring-primary" : "hover:bg-accent"}`}
                       onClick={() => toggle(i)}
                     >
-                      <CardContent className="flex items-start gap-3 p-3">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(i)}
-                          onChange={() => toggle(i)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-1 shrink-0"
-                          aria-label={`Select ${result.description}`}
-                        />
+                      <CardContent className="flex flex-col gap-2 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(i)}
+                            onChange={() => toggle(i)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0"
+                            aria-label={`Select ${result.description}`}
+                          />
+                          {result.specSheetUrl && (
+                            <Badge variant="secondary" className="shrink-0">
+                              Spec sheet
+                            </Badge>
+                          )}
+                        </div>
                         {result.imageUrl ? (
                           <img
                             src={result.imageUrl}
                             alt=""
-                            className="h-16 w-16 shrink-0 rounded border border-border object-contain p-1"
+                            className="h-32 w-full rounded border border-border bg-white object-contain p-2"
                           />
                         ) : (
-                          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[10px] leading-tight text-muted-foreground">
+                          <div className="flex h-32 w-full items-center justify-center rounded border border-dashed border-border text-xs text-muted-foreground">
                             No photo found
                           </div>
                         )}
-                        <div className="min-w-0 flex-1">
-                          <p className="text-base font-medium">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium leading-snug">
                             {[result.manufacturer, result.modelNumber].filter(Boolean).join(" ") ||
                               result.description}
                           </p>
-                          <p className="line-clamp-3 text-sm text-muted-foreground">{result.description}</p>
+                          <p className="line-clamp-3 text-xs text-muted-foreground">{result.description}</p>
                         </div>
-                        {result.specSheetUrl && (
-                          <Badge variant="secondary" className="shrink-0">
-                            Spec sheet
-                          </Badge>
-                        )}
                       </CardContent>
                     </Card>
                   ))}
@@ -680,6 +736,35 @@ function ActiveToggle({ item }: { item: PriceListItem }) {
   return <Switch checked={item.active} disabled={pending} onCheckedChange={toggle} />;
 }
 
+function DeletePriceListItemButton({ item }: { item: PriceListItem }) {
+  const router = useRouter();
+  const confirm = useConfirm();
+  const [pending, setPending] = useState(false);
+
+  async function handleClick() {
+    const confirmed = await confirm({
+      title: `Delete ${item.description}?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!confirmed) return;
+    setPending(true);
+    const result = await deletePriceListItem(item.id);
+    setPending(false);
+    if (!result.ok) {
+      window.alert(result.error);
+      return;
+    }
+    router.refresh();
+  }
+
+  return (
+    <Button variant="ghost" size="sm" disabled={pending} onClick={handleClick}>
+      Delete
+    </Button>
+  );
+}
+
 export function PriceListClient({ items, costCodes }: { items: PriceListItem[]; costCodes: CostCode[] }) {
   const costCodeById = new Map(costCodes.map((cc) => [cc.id, cc]));
 
@@ -693,7 +778,10 @@ export function PriceListClient({ items, costCodes }: { items: PriceListItem[]; 
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Item #</TableHead>
+              <TableHead>Manufacturer</TableHead>
               <TableHead>Description</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>Cost code</TableHead>
               <TableHead>Unit</TableHead>
               <TableHead>Unit cost</TableHead>
@@ -704,14 +792,17 @@ export function PriceListClient({ items, costCodes }: { items: PriceListItem[]; 
           <TableBody>
             {items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   No price list items yet.
                 </TableCell>
               </TableRow>
             )}
             {items.map((item) => (
               <TableRow key={item.id}>
+                <TableCell>{item.itemNumber ?? "—"}</TableCell>
+                <TableCell>{item.manufacturer ?? "—"}</TableCell>
                 <TableCell className="font-medium">{item.description}</TableCell>
+                <TableCell>{item.equipmentType ? EQUIPMENT_TYPE_LABELS[item.equipmentType] : "—"}</TableCell>
                 <TableCell>{costCodeById.get(item.costCodeId)?.code ?? "—"}</TableCell>
                 <TableCell>{item.unit}</TableCell>
                 <TableCell>{formatCurrencyPrecise(item.unitCost)}</TableCell>
@@ -719,7 +810,10 @@ export function PriceListClient({ items, costCodes }: { items: PriceListItem[]; 
                   <ActiveToggle item={item} />
                 </TableCell>
                 <TableCell>
-                  <EditPriceListItemDialog item={item} costCodes={costCodes} />
+                  <div className="flex items-center gap-1">
+                    <EditPriceListItemDialog item={item} costCodes={costCodes} />
+                    <DeletePriceListItemButton item={item} />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

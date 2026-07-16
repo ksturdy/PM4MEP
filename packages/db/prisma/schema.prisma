@@ -37,6 +37,25 @@ enum EstimateLineItemSourceType {
   Catalog
 }
 
+enum EquipmentType {
+  Furnace
+  Boiler
+  AirHandler
+  RooftopUnit
+  CondensingUnit
+  HeatPump
+  Chiller
+  CoolingTower
+  FanCoilUnit
+  VavBox
+  Pump
+  WaterHeater
+  VentilationFan
+  DuctworkAccessories
+  ControlsThermostat
+  Other
+}
+
 enum ProjectStatus {
   Planning
   Active
@@ -293,20 +312,23 @@ model Customer {
 // costCodeId (no snapshot need until something enters an estimate; see
 // EstimateLineItem for where snapshotting actually matters).
 model PriceListItem {
-  id           String   @id @default(uuid())
-  orgId        String   @map("org_id")
-  costCodeId   String   @map("cost_code_id")
-  description  String
-  manufacturer String?
-  modelNumber  String?  @map("model_number")
-  sku          String?
-  unit         String
-  unitCost     Decimal  @map("unit_cost") @db.Decimal(12, 4)
-  photoUrls    String[] @default([]) @map("photo_urls")
-  specSheetUrl String?  @map("spec_sheet_url")
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id              String         @id @default(uuid())
+  orgId           String         @map("org_id")
+  costCodeId      String         @map("cost_code_id")
+  itemNumber      String?        @map("item_number")
+  description     String
+  longDescription String?        @map("long_description")
+  equipmentType   EquipmentType? @map("equipment_type")
+  manufacturer    String?
+  modelNumber     String?        @map("model_number")
+  sku             String?
+  unit            String
+  unitCost        Decimal        @map("unit_cost") @db.Decimal(12, 4)
+  photoUrls       String[]       @default([]) @map("photo_urls")
+  specSheetUrl    String?        @map("spec_sheet_url")
+  active          Boolean        @default(true)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   costCode CostCode     @relation(fields: [costCodeId], references: [id], onDelete: Restrict)

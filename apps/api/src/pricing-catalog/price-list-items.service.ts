@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "@pm4mep/db";
 import type {
   PriceListItemCreate,
@@ -49,6 +49,24 @@ export class PriceListItemsService {
 
   update(orgId: string, id: string, input: PriceListItemUpdate) {
     return this.prisma.withTenant(orgId, (tx) => tx.priceListItem.update({ where: { id }, data: input }));
+  }
+
+  remove(orgId: string, id: string) {
+    return this.prisma.withTenant(orgId, async (tx) => {
+      const item = await tx.priceListItem.findUnique({ where: { id } });
+      if (!item || item.orgId !== orgId) {
+        throw new NotFoundException("Price list item not found");
+      }
+
+      const assemblyComponents = await tx.assemblyComponent.count({ where: { priceListItemId: id } });
+      if (assemblyComponents > 0) {
+        throw new ConflictException(
+          "This item is used in an assembly and can't be deleted — deactivate it instead",
+        );
+      }
+
+      await tx.priceListItem.delete({ where: { id } });
+    });
   }
 
   createPhotoUploadUrl(orgId: string, input: PriceListItemPhotoUploadUrlRequest) {

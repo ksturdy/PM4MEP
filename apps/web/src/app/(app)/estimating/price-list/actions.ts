@@ -104,3 +104,13 @@ export async function updatePriceListItem(id: string, input: PriceListItemUpdate
   revalidatePath("/estimating/price-list");
   return { ok: true, data: undefined };
 }
+
+export async function deletePriceListItem(id: string): Promise<ActionResult> {
+  const res = await apiFetch(`/price-list-items/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    return { ok: false, error: body?.message ?? "Failed to delete price list item" };
+  }
+  revalidatePath("/estimating/price-list");
+  return { ok: true, data: undefined };
+}

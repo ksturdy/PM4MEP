@@ -1,5 +1,28 @@
 import { z } from "zod";
 
+// Mirrors the Prisma EquipmentType enum exactly. Labels for display are a
+// UI concern (apps/web), not modeled here.
+export const EquipmentTypeSchema = z.enum([
+  "Furnace",
+  "Boiler",
+  "AirHandler",
+  "RooftopUnit",
+  "CondensingUnit",
+  "HeatPump",
+  "Chiller",
+  "CoolingTower",
+  "FanCoilUnit",
+  "VavBox",
+  "Pump",
+  "WaterHeater",
+  "VentilationFan",
+  "DuctworkAccessories",
+  "ControlsThermostat",
+  "Other",
+]);
+
+export type EquipmentType = z.infer<typeof EquipmentTypeSchema>;
+
 // Money/quantity fields are plain numbers at this JSON/form boundary — a
 // single input value from a form field has nowhere near enough magnitude
 // to hit floating-point precision issues. The "never do money math in JS
@@ -10,7 +33,12 @@ export const PriceListItemSchema = z.object({
   id: z.string().uuid(),
   orgId: z.string().uuid(),
   costCodeId: z.string().uuid(),
+  itemNumber: z.string().max(100).nullable(),
+  // Short description — shown in the price list table. longDescription is
+  // the free-form detail field, edit-only, never shown in the table.
   description: z.string().min(1).max(300),
+  longDescription: z.string().max(5000).nullable(),
+  equipmentType: EquipmentTypeSchema.nullable(),
   manufacturer: z.string().max(200).nullable(),
   modelNumber: z.string().max(200).nullable(),
   sku: z.string().max(200).nullable(),
@@ -26,7 +54,10 @@ export type PriceListItem = z.infer<typeof PriceListItemSchema>;
 
 export const PriceListItemCreateSchema = z.object({
   costCodeId: z.string().uuid(),
+  itemNumber: z.string().max(100).optional(),
   description: z.string().min(1).max(300),
+  longDescription: z.string().max(5000).optional(),
+  equipmentType: EquipmentTypeSchema.optional(),
   manufacturer: z.string().max(200).optional(),
   modelNumber: z.string().max(200).optional(),
   sku: z.string().max(200).optional(),
