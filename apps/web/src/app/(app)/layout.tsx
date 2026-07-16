@@ -71,7 +71,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           userName={data.user.name}
           role={data.role}
         />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );
