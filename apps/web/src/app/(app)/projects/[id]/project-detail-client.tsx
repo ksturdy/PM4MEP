@@ -147,6 +147,20 @@ function SummaryCard({ project }: { project: ProjectWithDetails }) {
           <span>Total actual</span>
           <span>{formatCurrency(rollup.totalActualCost)}</span>
         </div>
+        {project.contractValue != null && (
+          <>
+            <div className="flex justify-between border-t border-border pt-2 font-medium">
+              <span>Contract value</span>
+              <span>{formatCurrency(project.contractValue)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Margin</span>
+              <span className={project.contractValue - rollup.totalActualCost < 0 ? "text-destructive" : undefined}>
+                {formatCurrency(project.contractValue - rollup.totalActualCost)}
+              </span>
+            </div>
+          </>
+        )}
         <div className="flex justify-between">
           <span className="text-muted-foreground">Variance</span>
           <span className={rollup.totalVariance < 0 ? "text-destructive" : undefined}>

@@ -584,8 +584,13 @@ model Project {
   projectManagerId String? @map("project_manager_id")
   scopeDescription String? @map("scope_description")
 
-  totalBudget     Decimal @map("total_budget") @db.Decimal(12, 2)
-  totalActualCost Decimal @map("total_actual_cost") @db.Decimal(12, 2)
+  totalBudget     Decimal  @map("total_budget") @db.Decimal(12, 2)
+  totalActualCost Decimal  @map("total_actual_cost") @db.Decimal(12, 2)
+  // The customer-facing contract total (post-markup, tax-inclusive), copied
+  // once from the source estimate's resolveSellPriceWithTax() at conversion
+  // time — see ProjectsService.createFromEstimate. Null for projects created
+  // from scratch (no source estimate) since there's nothing to copy.
+  contractValue   Decimal? @map("contract_value") @db.Decimal(12, 2)
 
   createdById String @map("created_by_id")
 

@@ -22,6 +22,7 @@ export const ProjectSchema = z.object({
   scopeDescription: z.string().nullable(),
   totalBudget: z.coerce.number(),
   totalActualCost: z.coerce.number(),
+  contractValue: z.coerce.number().nullable(),
   createdById: z.string().uuid(),
   createdAt: z.coerce.date(),
 });
@@ -78,6 +79,7 @@ export const ProjectListItemSchema = z.object({
   targetCompletionDate: z.coerce.date().nullable(),
   totalBudget: z.coerce.number(),
   totalActualCost: z.coerce.number(),
+  contractValue: z.coerce.number().nullable(),
   createdAt: z.coerce.date(),
 });
 

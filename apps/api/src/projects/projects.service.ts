@@ -4,6 +4,7 @@ import {
   Decimal,
   calculateLineItemExtendedCost,
   canTransitionProject,
+  resolveSellPriceWithTax,
   rollupProjectBudget,
   type ApprovedChangeOrderForRollup,
   type BudgetLineForRollup,
@@ -49,6 +50,7 @@ export class ProjectsService {
           targetCompletionDate: p.targetCompletionDate,
           totalBudget: p.totalBudget,
           totalActualCost: p.totalActualCost,
+          contractValue: p.contractValue,
           createdAt: p.createdAt,
         })),
       );
@@ -152,6 +154,14 @@ export class ProjectsService {
         throw new BadRequestException("This estimate has already been converted into a project");
       }
 
+      const contractValue = resolveSellPriceWithTax({
+        calculatedSellPrice: new Decimal(estimate.calculatedSellPrice.toString()),
+        finalSellPriceOverride: estimate.finalSellPriceOverride
+          ? new Decimal(estimate.finalSellPriceOverride.toString())
+          : null,
+        taxPct: new Decimal(estimate.taxPct.toString()),
+      });
+
       const number = await nextProjectNumber(tx, orgId);
       const project = await tx.project.create({
         data: {
@@ -166,6 +176,7 @@ export class ProjectsService {
           scopeDescription: estimate.scopeDescription,
           totalBudget: 0,
           totalActualCost: 0,
+          contractValue: contractValue.toNumber(),
           createdById: userId,
           number,
         },
