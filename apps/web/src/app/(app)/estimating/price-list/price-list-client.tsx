@@ -469,18 +469,18 @@ function WebResultsBatchForm({
                 <img
                   src={result.imageUrl}
                   alt=""
-                  className="h-12 w-12 shrink-0 rounded border border-border object-contain p-1"
+                  className="h-16 w-16 shrink-0 rounded border border-border object-contain p-1"
                 />
               ) : (
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[9px] leading-tight text-muted-foreground">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[10px] leading-tight text-muted-foreground">
                   No photo found
                 </div>
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">
+                <p className="text-base font-medium">
                   {[result.manufacturer, result.modelNumber].filter(Boolean).join(" ") || result.description}
                 </p>
-                <p className="line-clamp-2 text-xs text-muted-foreground">{result.description}</p>
+                <p className="line-clamp-3 text-sm text-muted-foreground">{result.description}</p>
               </div>
               {result.specSheetUrl && (
                 <Badge variant="secondary" className="shrink-0">
@@ -571,7 +571,7 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
       }}
     >
       <DialogTrigger render={<Button variant="outline">Search the web</Button>} />
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{reviewing ? "Add to catalog" : "Search the web for equipment"}</DialogTitle>
         </DialogHeader>
@@ -629,19 +629,19 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
                           <img
                             src={result.imageUrl}
                             alt=""
-                            className="h-12 w-12 shrink-0 rounded border border-border object-contain p-1"
+                            className="h-16 w-16 shrink-0 rounded border border-border object-contain p-1"
                           />
                         ) : (
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[9px] leading-tight text-muted-foreground">
+                          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-dashed border-border text-center text-[10px] leading-tight text-muted-foreground">
                             No photo found
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium">
+                          <p className="text-base font-medium">
                             {[result.manufacturer, result.modelNumber].filter(Boolean).join(" ") ||
                               result.description}
                           </p>
-                          <p className="line-clamp-2 text-xs text-muted-foreground">{result.description}</p>
+                          <p className="line-clamp-3 text-sm text-muted-foreground">{result.description}</p>
                         </div>
                         {result.specSheetUrl && (
                           <Badge variant="secondary" className="shrink-0">

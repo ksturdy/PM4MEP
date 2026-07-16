@@ -1,114 +1,134 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import Anthropic from "@anthropic-ai/sdk";
 import { CatalogWebSearchResultSchema, type CatalogWebSearchResult } from "@pm4mep/shared-schema";
 import { z } from "zod";
 
-// Haiku 4.5 (cheapest/fastest tier) — chosen over Opus 4.8/Sonnet 5 for
-// per-search cost after an early Opus 4.8 test search came in at ~$0.31.
-// Haiku 4.5 doesn't support adaptive thinking, the `effort` param, or the
-// dynamic-filtering (_20260209) web_search/web_fetch tool variants — all
-// three are omitted/downgraded below accordingly, not left in by mistake.
-const MODEL = "claude-haiku-4-5";
+const SERPAPI_BASE_URL = "https://serpapi.com/search";
+const MAX_RESULTS = 5;
 
-const SYSTEM_PROMPT = `You help HVAC/MEP contractors find equipment to add to a price catalog. Given the name of
-a piece of equipment, search the web for it and return up to 5 real, distinct matches.
+const ImagesResultSchema = z.object({
+  title: z.string().optional(),
+  link: z.string().url(),
+  original: z.string().url().optional(),
+});
 
-Prefer manufacturer sites and authorized-distributor pages over marketplaces or forums. Search result
-snippets alone rarely contain a direct image or PDF link — for each promising match, fetch its product
-or spec-sheet page so you can find a real, direct URL for a product photo (an actual image file, not a
-general product page) and, if available, a spec-sheet PDF. Only set imageUrl/specSheetUrl when you found
-a direct, working link to an actual image file or PDF document — it is fine and expected to leave these
-null when a page genuinely doesn't have one. Never invent a manufacturer, model number, or URL — if
-you're not confident a field is correct, leave it null rather than guessing.`;
+const ImagesResponseSchema = z.object({
+  images_results: z.array(ImagesResultSchema).optional(),
+});
 
-const responseFormat = {
-  type: "json_schema" as const,
-  schema: {
-    type: "object",
-    properties: {
-      results: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            manufacturer: { type: ["string", "null"] },
-            modelNumber: { type: ["string", "null"] },
-            description: { type: "string" },
-            sourceUrl: { type: "string" },
-            imageUrl: { type: ["string", "null"] },
-            specSheetUrl: { type: ["string", "null"] },
-          },
-          required: ["manufacturer", "modelNumber", "description", "sourceUrl", "imageUrl", "specSheetUrl"],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ["results"],
-    additionalProperties: false,
-  },
-};
+const OrganicResultSchema = z.object({
+  link: z.string().url(),
+});
 
-const ResultsEnvelopeSchema = z.object({ results: z.array(CatalogWebSearchResultSchema) });
+const OrganicResponseSchema = z.object({
+  organic_results: z.array(OrganicResultSchema).optional(),
+});
 
-// Wraps the Claude API's web_search server tool to find equipment (photos,
-// spec sheets, manufacturer/model) that isn't in the org's own price list
-// yet. Structured outputs (output_config.format) constrain the final
-// response to parseable JSON; results are still validated against our own
-// Zod schema below rather than trusted blindly, since the model can still
-// return a URL that isn't actually reachable/correctly typed.
+// Finds equipment photos/spec sheets via SerpAPI's Google Search/Google
+// Images results — direct image and PDF URLs straight from Google's own
+// index, no LLM in the loop. An earlier version of this routed through the
+// Claude API's web_search/web_fetch tools, but that returns text snippets
+// meant for an LLM to reason over, not structured image/product data — it
+// was slow (searches took 30s-a few minutes), and even with web_fetch added
+// it frequently failed to find any real photo/spec-sheet URL at all. A
+// direct search API is both much faster and, since Google's own index has
+// already extracted these as structured results, much more reliable for
+// exactly this "find me a photo and a spec sheet" task.
 @Injectable()
 export class CatalogWebSearchService {
   private readonly logger = new Logger(CatalogWebSearchService.name);
-  private client: Anthropic | undefined;
 
   constructor(private readonly config: ConfigService) {}
 
-  private get anthropic(): Anthropic {
-    if (!this.client) {
-      this.client = new Anthropic({ apiKey: this.config.getOrThrow<string>("ANTHROPIC_API_KEY") });
+  async search(query: string): Promise<CatalogWebSearchResult[]> {
+    const apiKey = this.config.getOrThrow<string>("SERPAPI_KEY");
+
+    const [images, specSheetUrls] = await Promise.all([
+      this.fetchImages(query, apiKey),
+      this.fetchSpecSheetUrls(query, apiKey),
+    ]);
+
+    // Dedupe by source page (link) — the same product page often surfaces
+    // more than once with different image crops/angles.
+    const seenLinks = new Set<string>();
+    const candidates: CatalogWebSearchResult[] = [];
+    for (const image of images) {
+      if (!image.original || seenLinks.has(image.link)) continue;
+      seenLinks.add(image.link);
+
+      const sourceHost = this.hostname(image.link);
+      const specSheetUrl = specSheetUrls.find((url) => this.hostname(url) === sourceHost) ?? null;
+
+      candidates.push(
+        CatalogWebSearchResultSchema.parse({
+          manufacturer: null,
+          modelNumber: null,
+          description: image.title?.trim() || query,
+          sourceUrl: image.link,
+          imageUrl: image.original,
+          specSheetUrl,
+        }),
+      );
+      if (candidates.length >= MAX_RESULTS) break;
     }
-    return this.client;
+
+    return candidates;
   }
 
-  async search(query: string): Promise<CatalogWebSearchResult[]> {
-    const response = await this.anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: `Find equipment matching: ${query}` }],
-      // web_fetch is what actually lets Claude read a product page's HTML
-      // and pull a real image/PDF URL out of it — web_search alone only
-      // returns snippets, which rarely contain a direct file link. Basic
-      // (non-_20260209) tool versions — Haiku 4.5 isn't on the model list
-      // that supports the dynamic-filtering variants.
-      tools: [
-        { type: "web_search_20250305", name: "web_search", max_uses: 4 },
-        { type: "web_fetch_20250910", name: "web_fetch", max_uses: 4 },
-      ],
-      output_config: { format: responseFormat },
-    });
+  private async fetchImages(
+    query: string,
+    apiKey: string,
+  ): Promise<Array<{ title?: string; link: string; original?: string }>> {
+    const url = new URL(SERPAPI_BASE_URL);
+    url.searchParams.set("engine", "google_images");
+    url.searchParams.set("q", query);
+    url.searchParams.set("api_key", apiKey);
 
-    const textBlock = response.content.find((block): block is Anthropic.TextBlock => block.type === "text");
-    if (!textBlock) {
-      this.logger.warn(`catalog web search returned no text block for query "${query}"`);
+    const response = await fetch(url);
+    if (!response.ok) {
+      this.logger.warn(`SerpAPI image search failed with status ${response.status} for query "${query}"`);
       return [];
     }
 
-    let raw: unknown;
-    try {
-      raw = JSON.parse(textBlock.text);
-    } catch {
-      this.logger.warn(`catalog web search returned unparseable JSON for query "${query}"`);
-      return [];
-    }
-
-    const parsed = ResultsEnvelopeSchema.safeParse(raw);
+    const parsed = ImagesResponseSchema.safeParse(await response.json());
     if (!parsed.success) {
-      this.logger.warn(`catalog web search result failed validation for query "${query}": ${parsed.error.message}`);
+      this.logger.warn(`SerpAPI image search response failed validation for query "${query}"`);
       return [];
     }
 
-    return parsed.data.results;
+    return parsed.data.images_results ?? [];
+  }
+
+  // Google's own index already surfaces spec-sheet PDFs directly for a
+  // `filetype:pdf` query — no need for an LLM to guess at a URL.
+  private async fetchSpecSheetUrls(query: string, apiKey: string): Promise<string[]> {
+    const url = new URL(SERPAPI_BASE_URL);
+    url.searchParams.set("engine", "google");
+    url.searchParams.set("q", `${query} spec sheet filetype:pdf`);
+    url.searchParams.set("api_key", apiKey);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      this.logger.warn(`SerpAPI spec-sheet search failed with status ${response.status} for query "${query}"`);
+      return [];
+    }
+
+    const parsed = OrganicResponseSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      this.logger.warn(`SerpAPI spec-sheet search response failed validation for query "${query}"`);
+      return [];
+    }
+
+    return (parsed.data.organic_results ?? [])
+      .map((result) => result.link)
+      .filter((link) => link.toLowerCase().endsWith(".pdf"));
+  }
+
+  private hostname(url: string): string | null {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      return null;
+    }
   }
 }
