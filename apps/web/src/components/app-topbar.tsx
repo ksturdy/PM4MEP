@@ -81,7 +81,7 @@ export function AppTopbar({
               <DropdownMenuLabel className="truncate">{userName}</DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => signOut(router)}>Sign out</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => signOut(router)}>Sign out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
