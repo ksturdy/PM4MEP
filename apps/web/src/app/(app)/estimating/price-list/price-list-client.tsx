@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useState } from "react";
+import { ChangeEvent, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -383,7 +384,7 @@ function AddPriceListItemDialog({ costCodes }: { costCodes: CostCode[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button>Add item</Button>} />
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add price list item</DialogTitle>
         </DialogHeader>
@@ -404,7 +405,7 @@ function EditPriceListItemDialog({ item, costCodes }: { item: PriceListItem; cos
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="sm">Edit</Button>} />
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit price list item</DialogTitle>
         </DialogHeader>
@@ -434,13 +435,13 @@ function EditPriceListItemDialog({ item, costCodes }: { item: PriceListItem; cos
 }
 
 // The review step after selecting one or more web search results — cost
-// code and unit cost are never known from the web, so they're required here
-// even though everything else arrives pre-filled. Description/manufacturer/
-// model are shown read-only (editable afterward via the normal Edit dialog)
-// to keep a multi-item review form manageable. Submits each selected result
-// through the from-web-result endpoint sequentially; imageUrl/specSheetUrl
-// are threaded through directly from the search result rather than via a
-// form field, since they're never user-editable here.
+// code and unit cost are never known from the web, so they're required here.
+// SerpAPI never returns structured manufacturer/model/type (the web search
+// service only supplies a free-text description/photo/spec-sheet), so those
+// fields start blank and are filled in here rather than guessed. Submits
+// each selected result through the from-web-result endpoint sequentially;
+// imageUrl/specSheetUrl are threaded through directly from the search result
+// rather than via a form field, since they're never user-editable here.
 function WebResultsBatchForm({
   results,
   costCodes,
@@ -452,11 +453,30 @@ function WebResultsBatchForm({
 }) {
   const router = useRouter();
   const [costCodeId, setCostCodeId] = useState(costCodes[0]?.id ?? "");
-  const [rows, setRows] = useState(() => results.map(() => ({ unit: "", unitCost: "" })));
+  const [rows, setRows] = useState(() =>
+    results.map((result) => ({
+      manufacturer: result.manufacturer ?? "",
+      modelNumber: result.modelNumber ?? "",
+      equipmentType: "" as EquipmentType | "",
+      longDescription: "",
+      unit: "",
+      unitCost: "",
+    })),
+  );
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  function updateRow(i: number, patch: Partial<{ unit: string; unitCost: string }>) {
+  function updateRow(
+    i: number,
+    patch: Partial<{
+      manufacturer: string;
+      modelNumber: string;
+      equipmentType: EquipmentType | "";
+      longDescription: string;
+      unit: string;
+      unitCost: string;
+    }>,
+  ) {
     setRows((prev) => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   }
 
@@ -476,8 +496,10 @@ function WebResultsBatchForm({
       const outcome = await createPriceListItemFromWebResult({
         costCodeId,
         description: result.description,
-        manufacturer: result.manufacturer ?? undefined,
-        modelNumber: result.modelNumber ?? undefined,
+        longDescription: row.longDescription.trim() || undefined,
+        equipmentType: row.equipmentType || undefined,
+        manufacturer: row.manufacturer.trim() || undefined,
+        modelNumber: row.modelNumber.trim() || undefined,
         unit: row.unit.trim(),
         unitCost,
         imageUrl: result.imageUrl ?? undefined,
@@ -518,7 +540,7 @@ function WebResultsBatchForm({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex max-h-96 flex-col gap-3 overflow-y-auto">
+      <div className="flex flex-col gap-3">
         {results.map((result, i) => (
           <div key={i} className="flex flex-col gap-2 rounded-md border border-border p-3">
             <div className="flex items-start gap-3">
@@ -534,10 +556,7 @@ function WebResultsBatchForm({
                 </div>
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-base font-medium">
-                  {[result.manufacturer, result.modelNumber].filter(Boolean).join(" ") || result.description}
-                </p>
-                <p className="line-clamp-3 text-sm text-muted-foreground">{result.description}</p>
+                <p className="line-clamp-2 text-sm font-medium">{result.description}</p>
               </div>
               {result.specSheetUrl && (
                 <Badge variant="secondary" className="shrink-0">
@@ -545,7 +564,44 @@ function WebResultsBatchForm({
                 </Badge>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">Manufacturer</Label>
+                <Input
+                  placeholder="e.g. IBC"
+                  value={rows[i]!.manufacturer}
+                  onChange={(e) => updateRow(i, { manufacturer: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">Model #</Label>
+                <Input
+                  placeholder="e.g. DC 33-160"
+                  value={rows[i]!.modelNumber}
+                  onChange={(e) => updateRow(i, { modelNumber: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">Type</Label>
+                <Select
+                  value={rows[i]!.equipmentType}
+                  onValueChange={(value) => updateRow(i, { equipmentType: (value as EquipmentType) || "" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="None">
+                      {(value: string) => EQUIPMENT_TYPE_LABELS[value as EquipmentType] ?? "None"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EquipmentTypeSchema.options.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {EQUIPMENT_TYPE_LABELS[type]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div />
               <div className="flex flex-col gap-1">
                 <Label className="text-xs">Unit</Label>
                 <Input
@@ -561,6 +617,14 @@ function WebResultsBatchForm({
                   step="0.0001"
                   value={rows[i]!.unitCost}
                   onChange={(e) => updateRow(i, { unitCost: e.target.value })}
+                />
+              </div>
+              <div className="col-span-2 flex flex-col gap-1">
+                <Label className="text-xs">Details (BTU/load, specs, etc. — optional)</Label>
+                <Input
+                  placeholder="e.g. 160 MBH, 96% AFUE"
+                  value={rows[i]!.longDescription}
+                  onChange={(e) => updateRow(i, { longDescription: e.target.value })}
                 />
               </div>
             </div>
@@ -628,7 +692,7 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
       }}
     >
       <DialogTrigger render={<Button variant="outline">Search the web</Button>} />
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="sm:max-w-7xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{reviewing ? "Add to catalog" : "Search the web for equipment"}</DialogTitle>
         </DialogHeader>
@@ -663,7 +727,7 @@ function SearchWebDialog({ costCodes }: { costCodes: CostCode[] }) {
             )}
             {results && results.length > 0 && (
               <>
-                <div className="grid max-h-[32rem] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                   {results.map((result, i) => (
                     <Card
                       key={i}
@@ -765,8 +829,131 @@ function DeletePriceListItemButton({ item }: { item: PriceListItem }) {
   );
 }
 
+type ActiveFilter = "all" | "active" | "inactive";
+
+function PriceListFilters({
+  items,
+  manufacturer,
+  onManufacturerChange,
+  equipmentType,
+  onEquipmentTypeChange,
+  activeFilter,
+  onActiveFilterChange,
+  minPrice,
+  onMinPriceChange,
+  maxPrice,
+  onMaxPriceChange,
+}: {
+  items: PriceListItem[];
+  manufacturer: string;
+  onManufacturerChange: (value: string) => void;
+  equipmentType: string;
+  onEquipmentTypeChange: (value: string) => void;
+  activeFilter: ActiveFilter;
+  onActiveFilterChange: (value: ActiveFilter) => void;
+  minPrice: string;
+  onMinPriceChange: (value: string) => void;
+  maxPrice: string;
+  onMaxPriceChange: (value: string) => void;
+}) {
+  const manufacturerOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const item of items) {
+      if (item.manufacturer) names.add(item.manufacturer);
+    }
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ value: name, label: name }));
+  }, [items]);
+
+  const equipmentTypeOptions = useMemo(
+    () => EquipmentTypeSchema.options.map((type) => ({ value: type, label: EQUIPMENT_TYPE_LABELS[type] })),
+    [],
+  );
+
+  return (
+    <div className="flex flex-wrap items-end gap-3">
+      <div className="flex w-48 flex-col gap-1">
+        <Label className="text-xs">Manufacturer</Label>
+        <Combobox
+          options={manufacturerOptions}
+          value={manufacturer}
+          onValueChange={onManufacturerChange}
+          placeholder="All manufacturers"
+        />
+      </div>
+      <div className="flex w-48 flex-col gap-1">
+        <Label className="text-xs">Type</Label>
+        <Combobox
+          options={equipmentTypeOptions}
+          value={equipmentType}
+          onValueChange={onEquipmentTypeChange}
+          placeholder="All types"
+        />
+      </div>
+      <div className="flex w-40 flex-col gap-1">
+        <Label className="text-xs">Active</Label>
+        <Select value={activeFilter} onValueChange={(value) => value && onActiveFilterChange(value as ActiveFilter)}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="active">Active only</SelectItem>
+            <SelectItem value="inactive">Inactive only</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex w-28 flex-col gap-1">
+        <Label className="text-xs">Min cost ($)</Label>
+        <Input type="number" step="0.01" value={minPrice} onChange={(e) => onMinPriceChange(e.target.value)} />
+      </div>
+      <div className="flex w-28 flex-col gap-1">
+        <Label className="text-xs">Max cost ($)</Label>
+        <Input type="number" step="0.01" value={maxPrice} onChange={(e) => onMaxPriceChange(e.target.value)} />
+      </div>
+      {(manufacturer || equipmentType || activeFilter !== "all" || minPrice || maxPrice) && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            onManufacturerChange("");
+            onEquipmentTypeChange("");
+            onActiveFilterChange("all");
+            onMinPriceChange("");
+            onMaxPriceChange("");
+          }}
+        >
+          Clear filters
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function PriceListClient({ items, costCodes }: { items: PriceListItem[]; costCodes: CostCode[] }) {
   const costCodeById = new Map(costCodes.map((cc) => [cc.id, cc]));
+
+  const [manufacturer, setManufacturer] = useState("");
+  const [equipmentType, setEquipmentType] = useState("");
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+
+  const filteredItems = useMemo(() => {
+    const min = minPrice.trim() ? Number(minPrice) : null;
+    const max = maxPrice.trim() ? Number(maxPrice) : null;
+    return items.filter((item) => {
+      if (manufacturer && item.manufacturer !== manufacturer) return false;
+      if (equipmentType && item.equipmentType !== equipmentType) return false;
+      if (activeFilter === "active" && !item.active) return false;
+      if (activeFilter === "inactive" && item.active) return false;
+      if (min !== null && !Number.isNaN(min) && item.unitCost < min) return false;
+      if (max !== null && !Number.isNaN(max) && item.unitCost > max) return false;
+      return true;
+    });
+  }, [items, manufacturer, equipmentType, activeFilter, minPrice, maxPrice]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -774,6 +961,19 @@ export function PriceListClient({ items, costCodes }: { items: PriceListItem[]; 
         <SearchWebDialog costCodes={costCodes} />
         <AddPriceListItemDialog costCodes={costCodes} />
       </div>
+      <PriceListFilters
+        items={items}
+        manufacturer={manufacturer}
+        onManufacturerChange={setManufacturer}
+        equipmentType={equipmentType}
+        onEquipmentTypeChange={setEquipmentType}
+        activeFilter={activeFilter}
+        onActiveFilterChange={setActiveFilter}
+        minPrice={minPrice}
+        onMinPriceChange={setMinPrice}
+        maxPrice={maxPrice}
+        onMaxPriceChange={setMaxPrice}
+      />
       <div className="rounded-lg border border-border">
         <Table>
           <TableHeader>
@@ -790,14 +990,14 @@ export function PriceListClient({ items, costCodes }: { items: PriceListItem[]; 
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.length === 0 && (
+            {filteredItems.length === 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="text-center text-muted-foreground">
-                  No price list items yet.
+                  {items.length === 0 ? "No price list items yet." : "No items match the current filters."}
                 </TableCell>
               </TableRow>
             )}
-            {items.map((item) => (
+            {filteredItems.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.itemNumber ?? "—"}</TableCell>
                 <TableCell>{item.manufacturer ?? "—"}</TableCell>

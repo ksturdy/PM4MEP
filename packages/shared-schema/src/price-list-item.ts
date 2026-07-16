@@ -121,6 +121,8 @@ export const PriceListItemFromWebResultCreateSchema = z.object({
   costCodeId: z.string().uuid(),
   unitCost: z.coerce.number().nonnegative(),
   description: z.string().min(1).max(300),
+  longDescription: z.string().max(5000).optional(),
+  equipmentType: EquipmentTypeSchema.optional(),
   manufacturer: z.string().max(200).optional(),
   modelNumber: z.string().max(200).optional(),
   sku: z.string().max(200).optional(),
