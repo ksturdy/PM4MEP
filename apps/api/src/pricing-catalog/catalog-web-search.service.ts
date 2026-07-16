@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadGatewayException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { CatalogWebSearchResultSchema, type CatalogWebSearchResult } from "@pm4mep/shared-schema";
 import { z } from "zod";
@@ -9,11 +9,20 @@ const MAX_RESULTS = 5;
 const ImagesResultSchema = z.object({
   title: z.string().optional(),
   link: z.string().url(),
+  // Not every result carries a full-resolution `original` — fall back to
+  // `thumbnail` (still a real photo, just lower-res) rather than discarding
+  // the result outright.
   original: z.string().url().optional(),
+  thumbnail: z.string().url().optional(),
 });
 
+// SerpAPI returns HTTP 200 with an `error` string in the body for account
+// issues (invalid key, no credits, unverified account) rather than a
+// non-2xx status — checked explicitly below so those don't get silently
+// swallowed as "zero results found."
 const ImagesResponseSchema = z.object({
   images_results: z.array(ImagesResultSchema).optional(),
+  error: z.string().optional(),
 });
 
 const OrganicResultSchema = z.object({
@@ -22,6 +31,7 @@ const OrganicResultSchema = z.object({
 
 const OrganicResponseSchema = z.object({
   organic_results: z.array(OrganicResultSchema).optional(),
+  error: z.string().optional(),
 });
 
 // Finds equipment photos/spec sheets via SerpAPI's Google Search/Google
@@ -53,7 +63,8 @@ export class CatalogWebSearchService {
     const seenLinks = new Set<string>();
     const candidates: CatalogWebSearchResult[] = [];
     for (const image of images) {
-      if (!image.original || seenLinks.has(image.link)) continue;
+      const imageUrl = image.original ?? image.thumbnail;
+      if (!imageUrl || seenLinks.has(image.link)) continue;
       seenLinks.add(image.link);
 
       const sourceHost = this.hostname(image.link);
@@ -65,7 +76,7 @@ export class CatalogWebSearchService {
           modelNumber: null,
           description: image.title?.trim() || query,
           sourceUrl: image.link,
-          imageUrl: image.original,
+          imageUrl,
           specSheetUrl,
         }),
       );
@@ -78,25 +89,35 @@ export class CatalogWebSearchService {
   private async fetchImages(
     query: string,
     apiKey: string,
-  ): Promise<Array<{ title?: string; link: string; original?: string }>> {
+  ): Promise<Array<{ title?: string; link: string; original?: string; thumbnail?: string }>> {
     const url = new URL(SERPAPI_BASE_URL);
     url.searchParams.set("engine", "google_images");
     url.searchParams.set("q", query);
     url.searchParams.set("api_key", apiKey);
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      this.logger.warn(`SerpAPI image search failed with status ${response.status} for query "${query}"`);
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        this.logger.warn(`SerpAPI image search failed with status ${response.status} for query "${query}"`);
+        return [];
+      }
+
+      const parsed = ImagesResponseSchema.safeParse(await response.json());
+      if (!parsed.success) {
+        this.logger.warn(`SerpAPI image search response failed validation for query "${query}"`);
+        return [];
+      }
+      if (parsed.data.error) {
+        this.logger.error(`SerpAPI image search returned an error for query "${query}": ${parsed.data.error}`);
+        throw new BadGatewayException(`SerpAPI error: ${parsed.data.error}`);
+      }
+
+      return parsed.data.images_results ?? [];
+    } catch (err) {
+      if (err instanceof BadGatewayException) throw err;
+      this.logger.warn(`SerpAPI image search request failed for query "${query}": ${(err as Error).message}`);
       return [];
     }
-
-    const parsed = ImagesResponseSchema.safeParse(await response.json());
-    if (!parsed.success) {
-      this.logger.warn(`SerpAPI image search response failed validation for query "${query}"`);
-      return [];
-    }
-
-    return parsed.data.images_results ?? [];
   }
 
   // Google's own index already surfaces spec-sheet PDFs directly for a
@@ -107,21 +128,31 @@ export class CatalogWebSearchService {
     url.searchParams.set("q", `${query} spec sheet filetype:pdf`);
     url.searchParams.set("api_key", apiKey);
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      this.logger.warn(`SerpAPI spec-sheet search failed with status ${response.status} for query "${query}"`);
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        this.logger.warn(`SerpAPI spec-sheet search failed with status ${response.status} for query "${query}"`);
+        return [];
+      }
+
+      const parsed = OrganicResponseSchema.safeParse(await response.json());
+      if (!parsed.success) {
+        this.logger.warn(`SerpAPI spec-sheet search response failed validation for query "${query}"`);
+        return [];
+      }
+      if (parsed.data.error) {
+        this.logger.error(`SerpAPI spec-sheet search returned an error for query "${query}": ${parsed.data.error}`);
+        throw new BadGatewayException(`SerpAPI error: ${parsed.data.error}`);
+      }
+
+      return (parsed.data.organic_results ?? [])
+        .map((result) => result.link)
+        .filter((link) => link.toLowerCase().endsWith(".pdf"));
+    } catch (err) {
+      if (err instanceof BadGatewayException) throw err;
+      this.logger.warn(`SerpAPI spec-sheet search request failed for query "${query}": ${(err as Error).message}`);
       return [];
     }
-
-    const parsed = OrganicResponseSchema.safeParse(await response.json());
-    if (!parsed.success) {
-      this.logger.warn(`SerpAPI spec-sheet search response failed validation for query "${query}"`);
-      return [];
-    }
-
-    return (parsed.data.organic_results ?? [])
-      .map((result) => result.link)
-      .filter((link) => link.toLowerCase().endsWith(".pdf"));
   }
 
   private hostname(url: string): string | null {
